@@ -16,6 +16,7 @@
 
 #include "hmi_state.h"
 #include "led_control/led.h"
+#include "auth_manager.h"
 
 #define MAX_PATH_LEN                (255u)
 #define MAX_NAME_CHARS              (14u)      /* your tuned value */
@@ -26,8 +27,8 @@
 #define FILE_ICON_PATH              "/rsc/file_ico.png"
 
 /* ------------- Simple authentication ----------------- */
-#define ADMIN_USERNAME   "admin"
-#define ADMIN_PASSWORD   "admin"   /* change to what you want */
+#define ADMIN_USERNAME              "admin"
+#define ADMIN_DEFAULT_PASSWORD      "admin"   /* used only if QSPI auth backend is unavailable */
 
 static UINT g_logged_in = 0;       /* 0 = not logged in, 1 = logged in */
 
@@ -67,6 +68,37 @@ static UINT http_send_data(NX_HTTP_SERVER * server_ptr, const CHAR * data, UINT 
     return nx_http_server_callback_data_send(server_ptr, (VOID *) data, (ULONG) length);
 }
 
+
+/* JSON error helper (no heap, no long strings) */
+static UINT http_send_json_error(NX_HTTP_SERVER * server_ptr,
+                                 UINT           status_code,
+                                 const CHAR   * code,
+                                 const CHAR   * detail,
+                                 const CHAR   * qspi_op,
+                                 ULONG          qspi_err)
+{
+    CHAR body[256];
+    UINT body_len = (UINT) snprintf(body, sizeof(body),
+                                    "{\"error\":\"%s\",\"detail\":\"%s\",\"qspi_op\":\"%s\",\"qspi_err\":\"0x%08lX\"}",
+                                    code ? code : "ERR",
+                                    detail ? detail : "",
+                                    qspi_op ? qspi_op : "",
+                                    (unsigned long) qspi_err);
+
+    CHAR header[192];
+    const CHAR * reason = (status_code == 500u) ? "Internal Server Error" : "Bad Request";
+    UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                      "HTTP/1.0 %u %s\r\n"
+                                      "Content-Type: application/json\r\n"
+                                      "Content-Length: %u\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n",
+                                      status_code, reason, body_len);
+
+    http_send_data(server_ptr, header, header_len);
+    http_send_data(server_ptr, body, body_len);
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
 /* Send a simple HTTP 302 redirect to the given location. */
 static UINT http_send_redirect(NX_HTTP_SERVER * server_ptr, const CHAR * location)
 {
@@ -971,219 +1003,6 @@ static UINT http_handle_upload_chunk(NX_HTTP_SERVER * server_ptr,
     return NX_HTTP_CALLBACK_COMPLETED;
 }
 
-/* Stream upload handler --------------------------------------------------
- * POST /api/upload?path=/UI&name=FILE
- * Body is raw bytes of the file.
- *
- * This keeps all existing /api/files + /upload-chunk logic intact, but
- * removes per-chunk HTTP overhead when you want faster uploads.
- */
-static UINT http_handle_upload_stream(NX_HTTP_SERVER * server_ptr,
-                                      CHAR           * resource,
-                                      NX_PACKET      * packet_ptr)
-{
-    if ((g_usb_media == FX_NULL) || (g_usb_media->fx_media_id != FX_MEDIA_ID))
-    {
-        return http_send_error(server_ptr, "USB not mounted\r\n");
-    }
-
-    /* --- Parse query params: path= and name= -------------------------- */
-    CHAR path_param[MAX_PATH_LEN + 1];
-    CHAR name_param_raw[FX_MAX_LONG_NAME_LEN + 1];
-    CHAR name_param[MAX_NAME_CHARS + 1];
-
-    path_param[0]     = '\0';
-    name_param_raw[0] = '\0';
-    name_param[0]     = '\0';
-
-    const CHAR * query = strchr(resource, '?');
-    if (query != NX_NULL)
-    {
-        const CHAR * p = strstr(query + 1, "path=");
-        if (p != NX_NULL)
-        {
-            p += 5;
-            UINT i = 0;
-            while (*p && *p != '&' && i < MAX_PATH_LEN)
-            {
-                path_param[i++] = *p++;
-            }
-            path_param[i] = '\0';
-        }
-
-        p = strstr(query + 1, "name=");
-        if (p != NX_NULL)
-        {
-            p += 5;
-            UINT i = 0;
-            while (*p && *p != '&' && i < FX_MAX_LONG_NAME_LEN)
-            {
-                name_param_raw[i++] = *p++;
-            }
-            name_param_raw[i] = '\0';
-        }
-    }
-
-    if (name_param_raw[0] == '\0')
-    {
-        return http_send_error(server_ptr, "Upload failed: missing name\r\n");
-    }
-
-    /* Decode %XX / '+' for both. */
-    CHAR path_decoded[MAX_PATH_LEN + 1];
-    CHAR name_decoded[FX_MAX_LONG_NAME_LEN + 1];
-    url_decode(path_param, path_decoded, sizeof(path_decoded));
-    url_decode(name_param_raw, name_decoded, sizeof(name_decoded));
-
-    /* Enforce MAX_NAME_CHARS for safety with NetX + FileX long-name RAM. */
-    strncpy(name_param, name_decoded, MAX_NAME_CHARS);
-    name_param[MAX_NAME_CHARS] = '\0';
-
-    if (name_param[0] == '\0')
-    {
-        return http_send_error(server_ptr, "Upload failed: empty name\r\n");
-    }
-
-    /* --- Select target directory --------------------------------------- */
-    UINT fx_status;
-    if ((path_decoded[0] == '\0') || (strcmp(path_decoded, "/") == 0))
-    {
-        fx_status = fx_directory_default_set(g_usb_media, FX_NULL); /* root */
-    }
-    else
-    {
-        /* Accept url-style path "/UI/rsc" -> FileX path "UI/rsc" */
-        const CHAR * p = path_decoded;
-        while (*p == '/') { p++; }
-
-        if (*p == '\0')
-        {
-            fx_status = fx_directory_default_set(g_usb_media, FX_NULL);
-        }
-        else
-        {
-            fx_status = fx_directory_default_set(g_usb_media, (CHAR *) p);
-        }
-    }
-
-    if (fx_status != FX_SUCCESS)
-    {
-        CHAR msg[160];
-        snprintf(msg, sizeof(msg),
-                 "Upload failed: bad path (fx=0x%04X)\r\n",
-                 fx_status);
-        return http_send_error(server_ptr, msg);
-    }
-
-    /* Create/truncate file */
-    fx_status = fx_file_create(g_usb_media, name_param);
-    if (fx_status == FX_ALREADY_CREATED)
-    {
-        (void) fx_file_delete(g_usb_media, name_param);
-        fx_status = fx_file_create(g_usb_media, name_param);
-    }
-    if (fx_status != FX_SUCCESS)
-    {
-        (void) fx_directory_default_set(g_usb_media, FX_NULL);
-        return http_send_error(server_ptr, "Upload failed: create error\r\n");
-    }
-
-    FX_FILE file;
-    fx_status = fx_file_open(g_usb_media, &file, name_param, FX_OPEN_FOR_WRITE);
-    if (fx_status != FX_SUCCESS)
-    {
-        (void) fx_directory_default_set(g_usb_media, FX_NULL);
-        return http_send_error(server_ptr, "Upload failed: open error\r\n");
-    }
-
-    /* Content-Length */
-    UINT  http_status;
-    ULONG content_length = 0;
-    http_status = nx_http_server_content_length_get_extended(packet_ptr, &content_length);
-    if (http_status != NX_SUCCESS || content_length == 0u)
-    {
-        fx_file_close(&file);
-        (void) fx_directory_default_set(g_usb_media, FX_NULL);
-        return http_send_error(server_ptr, "Upload failed: missing content-length\r\n");
-    }
-
-    /* Optional safety cap (adjust as you like) */
-    const ULONG MAX_STREAM = (16u * 1024u * 1024u);
-    if (content_length > MAX_STREAM)
-    {
-        fx_file_close(&file);
-        (void) fx_directory_default_set(g_usb_media, FX_NULL);
-        return http_send_error(server_ptr, "Upload failed: file too large\r\n");
-    }
-
-    UCHAR buffer[HTTP_UPLOAD_BUFFER_SIZE];
-    ULONG body_offset = 0;
-
-    while (body_offset < content_length)
-    {
-        ULONG remaining = content_length - body_offset;
-        ULONG want      = (remaining > HTTP_UPLOAD_BUFFER_SIZE) ? HTTP_UPLOAD_BUFFER_SIZE : remaining;
-
-        UINT  actual = 0u;
-        http_status = nx_http_server_content_get_extended(server_ptr,
-                                                          packet_ptr,
-                                                          body_offset,
-                                                          (CHAR *) buffer,
-                                                          want,
-                                                          &actual);
-        if ((http_status != NX_SUCCESS) && (http_status != NX_HTTP_DATA_END))
-        {
-            fx_file_close(&file);
-            (void) fx_directory_default_set(g_usb_media, FX_NULL);
-            return http_send_error(server_ptr, "Upload failed: read error\r\n");
-        }
-
-        if (actual == 0u)
-        {
-            break;
-        }
-
-        fx_status = fx_file_write(&file, buffer, actual);
-        if (fx_status != FX_SUCCESS)
-        {
-            fx_file_close(&file);
-            (void) fx_directory_default_set(g_usb_media, FX_NULL);
-            return http_send_error(server_ptr, "Upload failed: write error\r\n");
-        }
-
-        body_offset += actual;
-
-        if (http_status == NX_HTTP_DATA_END)
-        {
-            break;
-        }
-    }
-
-    fx_file_close(&file);
-    (void) fx_media_flush(g_usb_media);
-    (void) fx_directory_default_set(g_usb_media, FX_NULL);
-
-    /* JSON OK */
-    static const CHAR ok_body[] = "{\"ok\":true}";
-    CHAR header[160];
-    UINT header_len = (UINT) snprintf(header, sizeof(header),
-                                      "HTTP/1.0 200 OK\r\n"
-                                      "Content-Type: application/json\r\n"
-                                      "Content-Length: %u\r\n"
-                                      "Connection: close\r\n"
-                                      "\r\n",
-                                      (unsigned) strlen(ok_body));
-    if (header_len > sizeof(header))
-    {
-        header_len = sizeof(header);
-    }
-    http_send_data(server_ptr, header, header_len);
-    http_send_data(server_ptr, ok_body, (UINT) strlen(ok_body));
-
-    return NX_HTTP_CALLBACK_COMPLETED;
-}
-
-
 /* Walk a URL-style path ("/", "/UI/", "/UI/rsc/emptyfolder/") and
  * set the FileX default directory accordingly by stepping through
  * each component with fx_directory_default_set().
@@ -1272,44 +1091,6 @@ static UINT http_send_json_directory(NX_HTTP_SERVER * server_ptr, const CHAR * u
         return http_send_error(server_ptr, "Invalid path\r\n");
     }
 
-    /* Build a normalized path string to return to the SPA: "/", "/UI", "/UI/rsc", ... */
-    CHAR decoded[MAX_PATH_LEN + 1];
-    url_decode(url_path ? url_path : "/", decoded, sizeof(decoded));
-
-    CHAR norm_path[MAX_PATH_LEN + 1];
-    norm_path[0] = '\0';
-
-    const CHAR * s = decoded;
-
-    /* Treat empty as root */
-    if ((s == NX_NULL) || (*s == '\0'))
-    {
-        strcpy(norm_path, "/");
-    }
-    else
-    {
-        /* Ensure leading slash */
-        if (*s != '/')
-        {
-            norm_path[0] = '/';
-            strncpy(&norm_path[1], s, MAX_PATH_LEN - 1);
-            norm_path[MAX_PATH_LEN] = '\0';
-        }
-        else
-        {
-            strncpy(norm_path, s, MAX_PATH_LEN);
-            norm_path[MAX_PATH_LEN] = '\0';
-        }
-
-        /* Strip trailing slashes (except keep single "/") */
-        UINT len = (UINT) strlen(norm_path);
-        while ((len > 1u) && (norm_path[len - 1u] == '/'))
-        {
-            norm_path[len - 1u] = '\0';
-            len--;
-        }
-    }
-
     /* HTTP header for streamed JSON. */
     CHAR header[128];
     UINT header_len = (UINT) snprintf(header, sizeof(header),
@@ -1317,19 +1098,27 @@ static UINT http_send_json_directory(NX_HTTP_SERVER * server_ptr, const CHAR * u
                                       "Content-Type: application/json\r\n"
                                       "Connection: close\r\n"
                                       "\r\n");
-    if (header_len > sizeof(header))
-    {
-        header_len = sizeof(header);
-    }
+    if (header_len > sizeof(header)) header_len = sizeof(header);
     http_send_data(server_ptr, header, header_len);
 
-    /* Start object + entries array */
-    CHAR buf[256];
-    UINT n = (UINT) snprintf(buf, sizeof(buf),
-                             "{\"path\":\"%s\",\"entries\":[",
-                             norm_path);
-    if (n > sizeof(buf)) { n = sizeof(buf); }
-    http_send_data(server_ptr, buf, n);
+    /* JSON object start: {"path":"...","entries":[ */
+    CHAR safe_path[MAX_PATH_LEN + 1];
+    {
+        UINT i = 0;
+        for (; url_path[i] != '\0' && i < (sizeof(safe_path) - 1); i++)
+        {
+            CHAR c = url_path[i];
+            safe_path[i] = (c == '\"' || c == '\\') ? '_' : c;
+        }
+        safe_path[i] = '\0';
+    }
+
+    CHAR json_prefix[256];
+    UINT json_prefix_len = (UINT) snprintf(json_prefix, sizeof(json_prefix),
+                                           "{\"path\":\"%s\",\"entries\":[",
+                                           safe_path[0] ? safe_path : "/");
+    if (json_prefix_len > sizeof(json_prefix)) json_prefix_len = sizeof(json_prefix);
+    http_send_data(server_ptr, json_prefix, json_prefix_len);
 
     CHAR  entry_name[FX_MAX_LONG_NAME_LEN + 1];
     UINT  attributes = 0;
@@ -1339,49 +1128,61 @@ static UINT http_send_json_directory(NX_HTTP_SERVER * server_ptr, const CHAR * u
     fx_status = fx_directory_first_entry_find(g_usb_media, entry_name);
     while (fx_status == FX_SUCCESS)
     {
-        /* Hide special/system/frontend files from the listing */
         if ((entry_name[0] != '\0') &&
             (strcmp(entry_name, ".") != 0) &&
             (strcmp(entry_name, "..") != 0) &&
-            (strcmp(entry_name, "System Volume Information") != 0) &&
-            (strcmp(entry_name, "index.html") != 0) &&
             (strcmp(entry_name, "app.html") != 0) &&
-            (strcmp(entry_name, "file_manager.js") != 0))
+            (strcmp(entry_name, "index.html") != 0) &&
+            (strcmp(entry_name, "file_manager.js") != 0) &&
+            (strcmp(entry_name, "System Volume Information") != 0))
         {
-            attributes = 0u;
-            size       = 0u;
+            attributes = 0;
+            size       = 0;
 
-            fx_directory_information_get(g_usb_media,
-                                         entry_name,
-                                         &attributes,
-                                         &size,
-                                         FX_NULL, FX_NULL, FX_NULL,
-                                         FX_NULL, FX_NULL, FX_NULL);
+            (void) fx_directory_information_get(g_usb_media,
+                                                entry_name,
+                                                &attributes,
+                                                &size,
+                                                FX_NULL, FX_NULL, FX_NULL,
+                                                FX_NULL, FX_NULL, FX_NULL);
 
-            const CHAR * type = (attributes & FX_DIRECTORY) ? "dir" : "file";
+            /* IMPORTANT: JS expects lowercase "dir"/"file" */
+            const CHAR * type_str = (attributes & FX_DIRECTORY) ? "dir" : "file";
 
-            if (!first)
+            /* JSON-safe name (basic escaping). */
+            CHAR safe_name[FX_MAX_LONG_NAME_LEN + 1];
+            UINT i = 0;
+            for (; entry_name[i] != '\0' && i < (sizeof(safe_name) - 1); i++)
             {
-                http_send_data(server_ptr, ",", 1u);
+                CHAR c = entry_name[i];
+                safe_name[i] = (c == '\"' || c == '\\') ? '_' : c;
             }
-            first = 0u;
+            safe_name[i] = '\0';
 
-            /* NOTE: entry_name is assumed to be FAT-safe (no quotes/backslashes). */
-            n = (UINT) snprintf(buf, sizeof(buf),
-                                 "{\"name\":\"%s\",\"type\":\"%s\",\"size\":%lu}",
-                                 entry_name, type, (unsigned long) size);
-            if (n > sizeof(buf)) { n = sizeof(buf); }
-            http_send_data(server_ptr, buf, n);
+            CHAR item_buf[256];
+            UINT item_len = (UINT) snprintf(item_buf, sizeof(item_buf),
+                                            "%s{\"name\":\"%s\",\"type\":\"%s\",\"size\":%lu}",
+                                            first ? "" : ",",
+                                            safe_name,
+                                            type_str,
+                                            (unsigned long) size);
+            if (item_len > sizeof(item_buf))
+            {
+                item_len = sizeof(item_buf);
+            }
+
+            http_send_data(server_ptr, item_buf, item_len);
+            first = 0;
         }
 
         fx_status = fx_directory_next_entry_find(g_usb_media, entry_name);
     }
 
-    /* End array + object */
+    /* JSON object end */
     static const CHAR json_end[] = "]}\r\n";
     http_send_data(server_ptr, json_end, (UINT) strlen(json_end));
 
-    /* Restore default directory to root */
+    /* Go back to root for safety. */
     (void) fx_directory_default_set(g_usb_media, FX_NULL);
 
     return NX_HTTP_CALLBACK_COMPLETED;
@@ -1600,16 +1401,50 @@ static UINT http_handle_login(NX_HTTP_SERVER * server_ptr, NX_PACKET * packet_pt
     form_get_value(body, "username=", username, sizeof(username));
     form_get_value(body, "password=", password, sizeof(password));
 
-    if ((strcmp(username, ADMIN_USERNAME) == 0) &&
-        (strcmp(password, ADMIN_PASSWORD) == 0))
+    /* Use QSPI-backed auth if available.
+     * Provisioning rule: if no password record exists yet, the first successful login SETS the password in QSPI.
+     */
+    int init_rc = auth_init();
+    int prov_rc = auth_is_provisioned();
+
+    if (init_rc == 0 && prov_rc == 0)
     {
-        /* Good credentials -> mark logged in and go to app.html */
-        g_logged_in = 1u;
-        return http_send_redirect(server_ptr, "/app.html");
+        /* First-time provisioning: username must be admin, password becomes the new stored password. */
+        if ((strcmp(username, ADMIN_USERNAME) == 0) && (password[0] != ' '))
+        {
+            if (auth_set_admin_password(password) == 0)
+            {
+                g_logged_in = 1u;
+                return http_send_redirect(server_ptr, "/app.html");
+            }
+        }
+
+        g_logged_in = 0u;
+        return http_send_redirect(server_ptr, "/index.html");
+    }
+    else if (init_rc == 0 && prov_rc > 0)
+    {
+        int ok = auth_verify_credentials(username, password);
+        if (ok == 1)
+        {
+            g_logged_in = 1u;
+            return http_send_redirect(server_ptr, "/app.html");
+        }
+
+        g_logged_in = 0u;
+        return http_send_redirect(server_ptr, "/index.html");
     }
     else
     {
-        /* Wrong credentials -> clear flag and go back to login page. */
+        /* Auth backend unavailable -> fallback to firmware default password (optional).
+         * If you don't want this fallback, delete this branch and always fail.
+         */
+        if ((strcmp(username, ADMIN_USERNAME) == 0) && (strcmp(password, ADMIN_DEFAULT_PASSWORD) == 0))
+        {
+            g_logged_in = 1u;
+            return http_send_redirect(server_ptr, "/app.html");
+        }
+
         g_logged_in = 0u;
         return http_send_redirect(server_ptr, "/index.html");
     }
@@ -1848,6 +1683,31 @@ UINT http_request_notify(NX_HTTP_SERVER * server_ptr,
             return http_handle_auth_check(server_ptr);
         }
 
+
+        /* --- API: auth_status --- */
+        if (strncmp(resource, "/api/auth_status", 16) == 0)
+        {
+            /* Try to read if configured (does NOT change login state) */
+            UINT configured = (UINT) auth_is_provisioned();
+            CHAR body[128];
+            UINT body_len = (UINT) snprintf(body, sizeof(body),
+                                            "{\"configured\":%s,\"logged_in\":%s}",
+                                            configured ? "true" : "false",
+                                            g_logged_in ? "true" : "false");
+
+            CHAR header[192];
+            UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                              "HTTP/1.0 200 OK\r\n"
+                                              "Content-Type: application/json\r\n"
+                                              "Content-Length: %u\r\n"
+                                              "Connection: close\r\n"
+                                              "\r\n",
+                                              (unsigned) body_len);
+            http_send_data(server_ptr, header, header_len);
+            http_send_data(server_ptr, body, body_len);
+            return NX_HTTP_CALLBACK_COMPLETED;
+        }
+
         /* --- API: files listing --- */
         if (strncmp(resource, "/api/files", 10) == 0)
         {
@@ -1856,13 +1716,10 @@ UINT http_request_notify(NX_HTTP_SERVER * server_ptr,
                 return http_handle_auth_check(server_ptr);
             }
 
-            CHAR path_param[MAX_PATH_LEN + 1];
-            path_param[0] = '\0';
+            CHAR url_path[MAX_PATH_LEN + 1];
+            url_path[0] = '\0';
 
-            /* Support BOTH:
-             *   - GET /api/files?path=/UI
-             *   - GET /api/files/UI            (preferred by file_manager_.js)
-             */
+            /* 1) Try query ?path=... */
             const CHAR * query = strchr(resource, '?');
             if (query != NX_NULL)
             {
@@ -1870,34 +1727,45 @@ UINT http_request_notify(NX_HTTP_SERVER * server_ptr,
                 if (p != NX_NULL)
                 {
                     p += 5; /* skip "path=" */
+                    CHAR raw[MAX_PATH_LEN + 1];
                     UINT i = 0;
                     while (*p && *p != '&' && i < MAX_PATH_LEN)
                     {
-                        path_param[i++] = *p++;
+                        raw[i++] = *p++;
                     }
-                    path_param[i] = '\0';
+                    raw[i] = '\0';
+                    url_decode(raw, url_path, sizeof(url_path));
                 }
             }
 
-            if (path_param[0] == '\0')
+            /* 2) Else: accept suffix /api/files/<path> */
+            if (url_path[0] == '\0')
             {
-                const CHAR * tail = resource + 10; /* after "/api/files" */
-                if ((tail != NX_NULL) && (tail[0] == '/'))
+                const CHAR * p = resource + 10; /* after "/api/files" */
+                if (p[0] == '\0' || p[0] == '?')
                 {
-                    strncpy(path_param, tail, MAX_PATH_LEN);
-                    path_param[MAX_PATH_LEN] = '\0';
+                    strcpy(url_path, "/");
+                }
+                else
+                {
+                    CHAR raw[MAX_PATH_LEN + 1];
+                    UINT i = 0;
+                    while (p[i] && p[i] != '?' && i < MAX_PATH_LEN)
+                    {
+                        raw[i] = p[i];
+                        i++;
+                    }
+                    raw[i] = '\0';
+                    url_decode(raw, url_path, sizeof(url_path));
+                    if (url_path[0] == '\0') strcpy(url_path, "/");
                 }
             }
 
-            if (path_param[0] == '\0')
-            {
-                strcpy(path_param, "/");  /* default root */
-            }
-
-            return http_send_json_directory(server_ptr, path_param);
+            return http_send_json_directory(server_ptr, url_path);
         }
 
-/* --- API: download --- */
+
+        /* --- API: download --- */
         if (strncmp(resource, "/api/download", 13) == 0)
         {
             if (!g_logged_in)
@@ -1905,13 +1773,10 @@ UINT http_request_notify(NX_HTTP_SERVER * server_ptr,
                 return http_handle_auth_check(server_ptr);
             }
 
-            CHAR file_param[MAX_PATH_LEN + 1];
-            file_param[0] = '\0';
+            CHAR file_path[MAX_PATH_LEN + 1];
+            file_path[0] = '\0';
 
-            /* Support BOTH:
-             *   - GET /api/download?file=/UI/x.pdf
-             *   - GET /api/download/UI/x.pdf     (preferred by file_manager_.js)
-             */
+            /* 1) Try query ?file=... (old mode) */
             const CHAR * query = strchr(resource, '?');
             if (query != NX_NULL)
             {
@@ -1919,34 +1784,46 @@ UINT http_request_notify(NX_HTTP_SERVER * server_ptr,
                 if (p != NX_NULL)
                 {
                     p += 5; /* skip "file=" */
+                    CHAR raw[MAX_PATH_LEN + 1];
                     UINT i = 0;
                     while (*p && *p != '&' && i < MAX_PATH_LEN)
                     {
-                        file_param[i++] = *p++;
+                        raw[i++] = *p++;
                     }
-                    file_param[i] = '\0';
+                    raw[i] = '\0';
+                    url_decode(raw, file_path, sizeof(file_path));
                 }
             }
 
-            if (file_param[0] == '\0')
+            /* 2) Else: accept suffix /api/download/<path> (JS mode) */
+            if (file_path[0] == '\0')
             {
-                const CHAR * tail = resource + 13; /* after "/api/download" */
-                if ((tail != NX_NULL) && (tail[0] == '/'))
+                const CHAR * p = resource + 13; /* after "/api/download" */
+                if (p[0] == '\0' || p[0] == '?')
                 {
-                    strncpy(file_param, tail, MAX_PATH_LEN);
-                    file_param[MAX_PATH_LEN] = '\0';
+                    return http_send_error(server_ptr, "No file specified\r\n");
                 }
+
+                CHAR raw[MAX_PATH_LEN + 1];
+                UINT i = 0;
+                while (p[i] && p[i] != '?' && i < MAX_PATH_LEN)
+                {
+                    raw[i] = p[i];
+                    i++;
+                }
+                raw[i] = '\0';
+                url_decode(raw, file_path, sizeof(file_path));
             }
 
-            if (file_param[0] == '\0')
+            if (file_path[0] == '\0')
             {
                 return http_send_error(server_ptr, "No file specified\r\n");
             }
 
-            return http_handle_download(server_ptr, file_param);
+            return http_handle_download(server_ptr, file_path);
         }
 
-/* ---- Serve frontend files from USB root ---- */
+        /* ---- Serve frontend files from USB root ---- */
 
         if ((strcmp(resource, "/index.html") == 0) ||
             (strcmp(resource, "/index") == 0))
@@ -2021,17 +1898,6 @@ UINT http_request_notify(NX_HTTP_SERVER * server_ptr,
             return http_handle_logout(server_ptr);
         }
 
-        /* --- API: upload (single POST with streaming body) --- */
-        if (strncmp(resource, "/api/upload", 11) == 0)
-        {
-            if (!g_logged_in)
-            {
-                return http_handle_auth_check(server_ptr);
-            }
-            return http_handle_upload_stream(server_ptr, resource, packet_ptr);
-        }
-
-
         /* --- API: delete (JS uses POST now) --- */
         if (strncmp(resource, "/api/delete", 11) == 0)
         {
@@ -2041,14 +1907,9 @@ UINT http_request_notify(NX_HTTP_SERVER * server_ptr,
             }
 
             CHAR path_param[MAX_PATH_LEN + 1];
-            CHAR decoded   [MAX_PATH_LEN + 1];
             path_param[0] = '\0';
-            decoded[0]    = '\0';
 
-            /* Support BOTH:
-             *   - POST /api/delete?path=/UI/x.txt
-             *   - POST /api/delete/UI/x.txt          (preferred by file_manager_.js)
-             */
+            /* 1) Try query ?path=... (old mode) */
             const CHAR * query = strchr(resource, '?');
             if (query != NX_NULL)
             {
@@ -2056,23 +1917,35 @@ UINT http_request_notify(NX_HTTP_SERVER * server_ptr,
                 if (p != NX_NULL)
                 {
                     p += 5; /* skip "path=" */
+                    CHAR raw[MAX_PATH_LEN + 1];
                     UINT i = 0;
                     while (*p && *p != '&' && i < MAX_PATH_LEN)
                     {
-                        path_param[i++] = *p++;
+                        raw[i++] = *p++;
                     }
-                    path_param[i] = '\0';
+                    raw[i] = '\0';
+                    url_decode(raw, path_param, sizeof(path_param));
                 }
             }
 
+            /* 2) Else: accept suffix /api/delete/<path> (JS mode) */
             if (path_param[0] == '\0')
             {
-                const CHAR * tail = resource + 11; /* after "/api/delete" */
-                if ((tail != NX_NULL) && (tail[0] == '/'))
+                const CHAR * p = resource + 11; /* after "/api/delete" */
+                if (p[0] == '\0' || p[0] == '?')
                 {
-                    strncpy(path_param, tail, MAX_PATH_LEN);
-                    path_param[MAX_PATH_LEN] = '\0';
+                    return http_send_error(server_ptr, "No path specified\r\n");
                 }
+
+                CHAR raw[MAX_PATH_LEN + 1];
+                UINT i = 0;
+                while (p[i] && p[i] != '?' && i < MAX_PATH_LEN)
+                {
+                    raw[i] = p[i];
+                    i++;
+                }
+                raw[i] = '\0';
+                url_decode(raw, path_param, sizeof(path_param));
             }
 
             if (path_param[0] == '\0')
@@ -2080,25 +1953,12 @@ UINT http_request_notify(NX_HTTP_SERVER * server_ptr,
                 return http_send_error(server_ptr, "No path specified\r\n");
             }
 
-            /* Decode any %XX / '+' */
-            url_decode(path_param, decoded, sizeof(decoded));
-
-            return http_handle_delete(server_ptr, decoded);
+            return http_handle_delete(server_ptr, path_param);
         }
 
-/* existing POST routes, e.g. /upload-chunk, /login (old) ... */
+        /* existing POST routes, e.g. /upload-chunk, /login (old) ... */
         if (strncmp(resource, "/upload-chunk", 13) == 0)
         {
-            if (!g_logged_in)
-            {
-                return http_send_error(server_ptr, "Not logged in.\r\n");
-            }
-            return http_handle_upload_chunk(server_ptr, resource, packet_ptr);
-        }
-
-        if (strncmp(resource, "/upload-chunk", 13) == 0)
-        {
-            /* Optional: reject uploads if not logged in. */
             if (!g_logged_in)
             {
                 return http_send_error(server_ptr, "Not logged in.\r\n");

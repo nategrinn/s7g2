@@ -434,7 +434,7 @@ trng_cfg_t g_sce_trng_cfg =
 const trng_instance_t g_sce_trng =
 { .p_ctrl = &g_sce_trng_ctrl, .p_cfg = &g_sce_trng_cfg, .p_api = &g_trng_on_sce };
 /** Work memory to store Crypto HAL context for algorithm modules. */
-static unsigned char g_sf_crypto0_memory_pool[1200 + 4] =
+static unsigned char g_sf_crypto0_memory_pool[128 + 4] =
 { 0 };
 
 /* Crypto Common Framework Control Block for g_sf_crypto0. */
@@ -443,7 +443,7 @@ sf_crypto_instance_ctrl_t g_sf_crypto0_ctrl;
 /* Crypto Common Framework Configuration for g_sf_crypto0. */
 const sf_crypto_cfg_t g_sf_crypto0_cfg =
 { .wait_option = TX_WAIT_FOREVER, .p_lower_lvl_crypto = (crypto_instance_t*) &g_sce, .p_extend = NULL,
-  .p_context = NULL, .p_memory_pool = g_sf_crypto0_memory_pool, .memory_pool_size = 1200, .close_option =
+  .p_context = NULL, .p_memory_pool = g_sf_crypto0_memory_pool, .memory_pool_size = 128, .close_option =
           SF_CRYPTO_CLOSE_OPTION_DEFAULT, };
 
 /* Crypto Common Framework Instance for g_sf_crypto0. */

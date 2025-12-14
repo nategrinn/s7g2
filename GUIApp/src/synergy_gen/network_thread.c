@@ -57,41 +57,53 @@ void sf_crypto_trng_init0(void)
         g_sf_crypto_trng0_err_callback ((void*) &g_sf_crypto_trng0, &ssp_err_g_sf_crypto_trng0);
     }
 }
-#if defined(__ICCARM__)
-            #define g_sf_crypto_cipher0_err_callback_WEAK_ATTRIBUTE
-            #pragma weak g_sf_crypto_cipher0_err_callback  = g_sf_crypto_cipher0_err_callback_internal
-            #elif defined(__GNUC__)
-            #define g_sf_crypto_cipher0_err_callback_WEAK_ATTRIBUTE __attribute__ ((weak, alias("g_sf_crypto_cipher0_err_callback_internal")))
-            #endif
-void g_sf_crypto_cipher0_err_callback(void *p_instance, void *p_data)
-g_sf_crypto_cipher0_err_callback_WEAK_ATTRIBUTE;
+#if defined(BSP_MCU_GROUP_S7G2) || defined(BSP_MCU_GROUP_S5D9) || defined(BSP_MCU_GROUP_S5D5) || defined(BSP_MCU_GROUP_S5D3)
+            hash_ctrl_t g_sce_hash_0_ctrl;
+            hash_cfg_t  g_sce_hash_0_cfg =
+            {
+              .p_crypto_api  = &g_sce_crypto_api
+            };
+            const hash_instance_t g_sce_hash_0 =
+            {
+                  .p_ctrl = &g_sce_hash_0_ctrl ,
+                  .p_cfg  = &g_sce_hash_0_cfg  ,
+                  .p_api  = &g_sha256_hash_on_sce
+            };
+        #else
+#error  "HASH Driver on SCE Feature not available for selected MCU"
+#endif
+/* Control block for g_sf_crypto_hash0. */
+sf_crypto_hash_instance_ctrl_t g_sf_crypto_hash0_ctrl;
 
-/* Control block for g_sf_crypto_cipher0. */
-sf_crypto_cipher_instance_ctrl_t g_sf_crypto_cipher0_ctrl;
-
-/* Configuration structure for g_sf_crypto_cipher0. */
-sf_crypto_cipher_cfg_t g_sf_crypto_cipher0_cfg =
-{ .key_type = SF_CRYPTO_KEY_TYPE_RSA_PLAIN_TEXT, .key_size = SF_CRYPTO_KEY_SIZE_RSA_2048, .cipher_chaining_mode =
-          SF_CRYPTO_CIPHER_MODE_ECB,
-  .p_lower_lvl_crypto_common = (sf_crypto_instance_t*) &g_sf_crypto0, .p_lower_lvl_crypto_trng =
-          (sf_crypto_trng_instance_t*) &g_sf_crypto_trng0,
-  .p_extend = NULL,
+/* Configuration structure for g_sf_crypto_hash0. */
+sf_crypto_hash_cfg_t g_sf_crypto_hash0_cfg =
+{ .hash_type = SF_CRYPTO_HASH_ALGORITHM_SHA256, .p_lower_lvl_crypto_common = (sf_crypto_instance_t*) &g_sf_crypto0,
+  .p_lower_lvl_instance = (hash_instance_t*) &g_sce_hash_0, .p_extend = NULL,
 
 };
-/* Instance structure for g_sf_crypto_cipher0. */
-sf_crypto_cipher_instance_t g_sf_crypto_cipher0 =
-{ .p_ctrl = &g_sf_crypto_cipher0_ctrl, .p_cfg = &g_sf_crypto_cipher0_cfg, .p_api =
-          &g_sf_crypto_cipher_on_sf_crypto_cipher };
+/* Instance structure for g_sf_crypto_hash0. */
+sf_crypto_hash_instance_t g_sf_crypto_hash0 =
+{ .p_ctrl = &g_sf_crypto_hash0_ctrl, .p_cfg = &g_sf_crypto_hash0_cfg, .p_api = &g_sf_crypto_hash_api };
+
+#if defined(__ICCARM__)
+            #define g_sf_crypto_hash0_err_callback_WEAK_ATTRIBUTE
+            #pragma weak g_sf_crypto_hash0_err_callback  = g_sf_crypto_hash0_err_callback_internal
+            #elif defined(__GNUC__)
+            #define g_sf_crypto_hash0_err_callback_WEAK_ATTRIBUTE   __attribute__ ((weak, alias("g_sf_crypto_hash0_err_callback_internal")))
+            #endif
+void g_sf_crypto_hash0_err_callback(void *p_instance, void *p_data)
+g_sf_crypto_hash0_err_callback_WEAK_ATTRIBUTE;
 
 /*******************************************************************************************************************//**
- * @brief      This is a weak example initialization error function.  It should be overridden by defining a user  function 
+ * @brief      This is a weak example initialization error function.  It should be overridden by defining a user function 
  *             with the prototype below.
- *             - void g_sf_crypto_cipher0_err_callback(void * p_instance, void * p_data)
+ *             - void g_sf_crypto_hash0_err_callback(void * p_instance, void * p_data)
  *
- * @param[in]  p_instance arguments used to identify which instance caused the error and p_data Callback arguments used to identify what error caused the callback.
+ * @param[in]  p_instance arguments used to identify which instance caused the error and p_data Callback arguments used
+ *             to identify what error caused the callback.
  **********************************************************************************************************************/
-void g_sf_crypto_cipher0_err_callback_internal(void *p_instance, void *p_data);
-void g_sf_crypto_cipher0_err_callback_internal(void *p_instance, void *p_data)
+void g_sf_crypto_hash0_err_callback_internal(void *p_instance, void *p_data);
+void g_sf_crypto_hash0_err_callback_internal(void *p_instance, void *p_data)
 {
     /** Suppress compiler warning for not using parameters. */
     SSP_PARAMETER_NOT_USED (p_instance);
@@ -104,16 +116,20 @@ void g_sf_crypto_cipher0_err_callback_internal(void *p_instance, void *p_data)
 /*******************************************************************************************************************//**
  * @brief     Initialization function that the user can choose to have called automatically during thread entry.
  *            The user can call this function at a later time if desired using the prototype below.
- *            - void sf_crypto_cipher_init0(void)
+ *            - void sf_crypto_hash_init0(void)
  **********************************************************************************************************************/
-void sf_crypto_cipher_init0(void)
+void sf_crypto_hash_init0(void)
 {
-    ssp_err_t ssp_err_g_sf_crypto_cipher0;
-    ssp_err_g_sf_crypto_cipher0 = g_sf_crypto_cipher0.p_api->open (g_sf_crypto_cipher0.p_ctrl,
-                                                                   g_sf_crypto_cipher0.p_cfg);
-    if (SSP_SUCCESS != ssp_err_g_sf_crypto_cipher0)
+    /* Open Crypto Common Framework. */
+    ssp_err_t ssp_err_g_sf_crypto_hash0;
+    ssp_err_g_sf_crypto_hash0 = g_sf_crypto_hash0.p_api->open (g_sf_crypto_hash0.p_ctrl, g_sf_crypto_hash0.p_cfg);
+    if (SSP_SUCCESS != ssp_err_g_sf_crypto_hash0)
     {
-        g_sf_crypto_cipher0_err_callback ((void*) &g_sf_crypto_cipher0, &ssp_err_g_sf_crypto_cipher0);
+        BSP_CFG_HANDLE_UNRECOVERABLE_ERROR (0);
+    }
+    if (SSP_SUCCESS != ssp_err_g_sf_crypto_hash0)
+    {
+        g_sf_crypto_hash0_err_callback ((void*) &g_sf_crypto_hash0, &ssp_err_g_sf_crypto_hash0);
     }
 }
 NX_HTTP_SERVER g_http_server0;
@@ -285,10 +301,14 @@ static void network_thread_func(ULONG thread_input)
     tx_startup_common_init ();
 
     /* Initialize each module instance. */
-    /** Call initialization function for g_sf_crypto_cipher0. */
+    /** Call initialization function for g_sf_crypto_trng0. */
 #if (1)
     /** Call initialization function if user has selected to do so. */
-    sf_crypto_cipher_init0 ();
+    sf_crypto_trng_init0 ();
+#endif
+    /** Call initialization function for g_sf_crypto_hash0. */
+#if (1)
+    sf_crypto_hash_init0 ();
 #endif
     /** Call initialization function if user has selected to do so. */
 #if (1)

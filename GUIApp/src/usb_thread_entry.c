@@ -4,7 +4,6 @@
 #include "ux_host_class_storage.h"
 #include "fx_api.h"
 #include "hmi_state.h"
-#include "storage.h"
 
 /* Event flags created in configurator (USB Plug Event Flags) */
 extern TX_EVENT_FLAGS_GROUP         g_usb_plug_events;

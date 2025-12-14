@@ -10,7 +10,8 @@
 extern void network_thread_entry(void);
 #endif
 #include "sf_crypto_trng.h"
-#include "sf_crypto_cipher.h"
+#include "r_hash_api.h"
+#include "sf_crypto_hash.h"
 #include "nxd_http_server.h"
 #include "nxd_dhcp_client.h"
 #ifdef __cplusplus
@@ -19,9 +20,13 @@ extern "C" {
 extern sf_crypto_trng_instance_t g_sf_crypto_trng0;
 void g_sf_crypto_trng0_err_callback(void *p_instance, void *p_data);
 void sf_crypto_trng_init0(void);
-extern sf_crypto_cipher_instance_t g_sf_crypto_cipher0;
-void g_sf_crypto_cipher0_err_callback(void *p_instance, void *p_data);
-void sf_crypto_cipher_init0(void);
+extern const hash_instance_t g_sce_hash_0;
+extern sf_crypto_hash_instance_t g_sf_crypto_hash0;
+
+/* Crypto HASH Framework Initialization Function for the instance 'g_sf_crypto_hash0'. */
+void sf_crypto_hash_init0(void);
+/* Crypto HASH Framework Error Callback Function for the instance 'g_sf_crypto_hash0'. */
+void g_sf_crypto_hash0_err_callback(void *p_instance, void *p_data);
 extern NX_HTTP_SERVER g_http_server0;
 #if !defined(NULL)
 UINT NULL(NX_HTTP_SERVER *server_ptr, UINT request_type, CHAR *resource, CHAR **name, CHAR **password, CHAR **realm);
