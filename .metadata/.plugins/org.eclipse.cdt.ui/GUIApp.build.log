@@ -1,19 +1,44 @@
-19:30:32 **** Incremental Build of configuration Debug for project GUIApp ****
+23:31:33 **** Incremental Build of configuration Debug for project GUIApp ****
 make -r -j12 all 
 Building file: ../src/http_server_user.c
 ../src/http_server_user.c: In function 'http_handle_login':
-../src/http_server_user.c:1413:72: warning: null character(s) preserved in literal
- 1413 |         if ((strcmp(username, ADMIN_USERNAME) == 0) && (password[0] != ' '))
+../src/http_server_user.c:1744:72: warning: null character(s) preserved in literal
+ 1744 |         if ((strcmp(username, ADMIN_USERNAME) == 0) && (password[0] != ' '))
       |                                                                        ^
 At top level:
-../src/http_server_user.c:73:13: warning: 'http_send_json_error' defined but not used [-Wunused-function]
-   73 | static UINT http_send_json_error(NX_HTTP_SERVER * server_ptr,
+../src/http_server_user.c:1122:13: warning: 'http_handle_upload_chunk' defined but not used [-Wunused-function]
+ 1122 | static UINT http_handle_upload_chunk(NX_HTTP_SERVER * server_ptr,
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~
+../src/http_server_user.c:382:13: warning: 'http_send_file_download' defined but not used [-Wunused-function]
+  382 | static UINT http_send_file_download(NX_HTTP_SERVER * server_ptr, const CHAR * file_path)
+      |             ^~~~~~~~~~~~~~~~~~~~~~~
+../src/http_server_user.c:145:13: warning: 'http_send_json_error' defined but not used [-Wunused-function]
+  145 | static UINT http_send_json_error(NX_HTTP_SERVER * server_ptr,
       |             ^~~~~~~~~~~~~~~~~~~~
+../src/http_server_user.c: In function 'http_request_notify':
+../src/http_server_user.c:485:58: warning: 'snprintf' output may be truncated before the last format character [-Wformat-truncation=]
+  485 |         snprintf(g_breadcrumb, sizeof(g_breadcrumb), "/%s", g_current_path);
+      |                                                          ^
+../src/http_server_user.c:485:9: note: 'snprintf' output between 2 and 257 bytes into a destination of size 256
+  485 |         snprintf(g_breadcrumb, sizeof(g_breadcrumb), "/%s", g_current_path);
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../src/http_server_user.c:707:66: warning: '%s' directive output may be truncated writing up to 63 bytes into a region of size between 0 and 255 [-Wformat-truncation=]
+  707 |                     snprintf(child_path, sizeof(child_path), "%s/%s", g_current_path, g_short_name);
+      |                                                                  ^~                   ~~~~~~~~~~~~
+../src/http_server_user.c:707:21: note: 'snprintf' output between 2 and 320 bytes into a destination of size 256
+  707 |                     snprintf(child_path, sizeof(child_path), "%s/%s", g_current_path, g_short_name);
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+../src/http_server_user.c:775:64: warning: '%s' directive output may be truncated writing up to 63 bytes into a region of size between 0 and 255 [-Wformat-truncation=]
+  775 |                     snprintf(file_path, sizeof(file_path), "%s/%s", g_current_path, g_short_name);
+      |                                                                ^~                   ~~~~~~~~~~~~
+../src/http_server_user.c:775:21: note: 'snprintf' output between 2 and 320 bytes into a destination of size 256
+  775 |                     snprintf(file_path, sizeof(file_path), "%s/%s", g_current_path, g_short_name);
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Building target: GUIApp.elf
 arm-none-eabi-objcopy -O srec "GUIApp.elf"  "GUIApp.srec"
 arm-none-eabi-size --format=berkeley "GUIApp.elf"
    text	   data	    bss	    dec	    hex	filename
- 749380	   4032	 501004	1254416	 132410	GUIApp.elf
+ 748888	   4032	 505100	1258020	 133224	GUIApp.elf
 
-19:30:34 Build Finished. 0 errors, 2 warnings. (took 1s.963ms)
+23:31:35 Build Finished. 0 errors, 7 warnings. (took 1s.975ms)
 

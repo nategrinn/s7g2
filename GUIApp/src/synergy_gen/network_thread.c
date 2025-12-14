@@ -133,7 +133,7 @@ void sf_crypto_hash_init0(void)
     }
 }
 NX_HTTP_SERVER g_http_server0;
-uint8_t g_http_server0_stack_memory[5120] BSP_PLACE_IN_SECTION_V2(".stack.g_http_server0") BSP_ALIGN_VARIABLE_V2(BSP_STACK_ALIGNMENT);
+uint8_t g_http_server0_stack_memory[7168] BSP_PLACE_IN_SECTION_V2(".stack.g_http_server0") BSP_ALIGN_VARIABLE_V2(BSP_STACK_ALIGNMENT);
 #if defined(__ICCARM__)
 #define g_http_server0_err_callback_WEAK_ATTRIBUTE
 #pragma weak g_http_server0_err_callback  = g_http_server0_err_callback_internal
@@ -169,7 +169,7 @@ void http_server_init0(void)
     UINT g_http_server0_err;
     /* Create HTTP Server. */
     g_http_server0_err = nx_http_server_create (&g_http_server0, "g_http_server0 HTTP Server", &g_ip0, &g_fx_media0,
-                                                &g_http_server0_stack_memory[0], 5120, &g_packet_pool0, NULL,
+                                                &g_http_server0_stack_memory[0], 7168, &g_packet_pool0, NULL,
                                                 http_request_notify);
     if (NX_SUCCESS != g_http_server0_err)
     {

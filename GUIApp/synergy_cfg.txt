@@ -727,7 +727,7 @@ Synergy Configuration
     Multipart HTTP requests support: Disable
     Internal thread priority: 4
     Internal thread time slicing interval (ticks): 2
-    Server socket window size (bytes): 2048
+    Server socket window size (bytes): 4096
     Server time out (seconds): 10
     Server time out for accept (seconds): 10
     Server time out for disconnect (seconds): 10
@@ -1336,7 +1336,7 @@ Synergy Configuration
       Instance "NetX Duo DHCP IPv4 Common"
     Instance "g_http_server0 NetX Duo HTTP Server"
       Name: g_http_server0
-      Internal thread stack size (bytes): 5120
+      Internal thread stack size (bytes): 7168
       Name of Authentication Checking Function: NULL
       Name of Request Notify Callback Function: http_request_notify
       Name of generated initialization function: http_server_init0

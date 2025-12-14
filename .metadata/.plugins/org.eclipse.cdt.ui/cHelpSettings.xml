@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <cHelpSettings>
-                                                                            
+                                                                                        
+    
+    
+    
     
     
     
@@ -24,7 +27,10 @@
             <book enabled="true" title="Renesas.Synergy.2.7.0.pack"/>
         </provider>
     </project>
-                                                                        
+                                                                                    
+
+
+
 
 
 
