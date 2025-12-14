@@ -756,17 +756,18 @@ Synergy Configuration
   Module "QSPI Driver on QSPI"
     Parameter Checking: Default (BSP)
     
-  Module "Crypto TRNG Framework on sf_crypto_trng"
+  Module "Crypto HASH Framework on sf_crypto_hash"
     Parameter Checking: Default (BSP)
     
   Module "Crypto Framework on sf_crypto"
     Parameter Checking: Default (BSP)
     
   Module "SCE COMMON Driver on r_sce"
-  Module "TRNG Driver on r_sce_trng"
-  Module "Crypto Cipher Framework on sf_crypto_cipher"
+  Module "HASH Driver on r_sce_hash"
+  Module "Crypto TRNG Framework on sf_crypto_trng"
     Parameter Checking: Default (BSP)
     
+  Module "TRNG Driver on r_sce_trng"
   HAL
     Instance "g_ioport I/O Port Driver on r_ioport"
       Name [Fixed]: g_ioport
@@ -1463,18 +1464,15 @@ Synergy Configuration
           
       Instance "NetX Duo HTTP Common"
         Instance "NetX MD5"
-    Instance "g_sf_crypto_cipher0 Crypto Cipher Framework on sf_crypto_cipher"
-      Name: g_sf_crypto_cipher0
-      Key type: RSA Plain text
-      Key size: RSA 2048-bits
-      Cipher chaining_mode: ECB
-      Name of generated initialization function: sf_crypto_cipher_init0
+    Instance "g_sf_crypto_hash0 Crypto HASH Framework on sf_crypto_hash"
+      Instance Name: g_sf_crypto_hash0
+      Name of generated initialization function: sf_crypto_hash_init0
       Auto Initialization: Enable
       
       Instance "g_sf_crypto0 Crypto Framework on sf_crypto"
         Name: g_sf_crypto0
         Wait time: TX_WAIT_FOREVER
-        Byte Pool Size: 1200
+        Byte Pool Size: 128
         Auto Initialization: Enable
         Force Closure Support: Default
         
@@ -1529,124 +1527,180 @@ Synergy Configuration
           HASH MD5: Enable
           True Random Number Generator: Enable
           
-      Instance "g_sf_crypto_trng0 Crypto TRNG Framework on sf_crypto_trng"
-        Name: g_sf_crypto_trng0
-        Name of generated initialization function: sf_crypto_trng_init0
-        Auto Initialization: Enable
+      Instance "g_sce_hash_0 HASH Driver on r_sce_hash"
+        Name (for S7G2, S5D9, S5D5, S5D3 devices only): g_sce_hash_0
+        Algorithm: SHA256
+        : 
         
-        Instance "g_sf_crypto0 Crypto Framework on sf_crypto"
-          Name: g_sf_crypto0
-          Wait time: TX_WAIT_FOREVER
-          Byte Pool Size: 1200
-          Auto Initialization: Enable
-          Force Closure Support: Default
+        Instance "g_sce SCE COMMON Driver on r_sce"
+          Name: g_sce
+          Endian flag: CRYPTO_WORD_ENDIAN_LITTLE
+          : 
+          Interfaces which can be accessed through InterfaceGet API.: 
+          AES Plain-text ECB 128-bit: Enable
+          AES Plain-text CBC 128-bit: Enable
+          AES Plain-text CTR 128-bit: Enable
+          AES Plain-text GCM 128-bit: Enable
+          AES Plain-text XTS 128-bit: Enable
+          AES Plain-text ECB 192-bit: Enable
+          AES Plain-text CBC 192-bit: Enable
+          AES Plain-text CTR 192-bit: Enable
+          AES Plain-text GCM 192-bit: Enable
+          AES Plain-text ECB 256-bit: Enable
+          AES Plain-text CBC 256-bit: Enable
+          AES Plain-text CTR 256-bit: Enable
+          AES Plain-text GCM 256-bit: Enable
+          AES Plain-text XTS 256-bit: Enable
+          AES Wrapped ECB 128-bit: Enable
+          AES Wrapped CBC 128-bit: Enable
+          AES Wrapped CTR 128-bit: Enable
+          AES Wrapped GCM 128-bit: Enable
+          AES Wrapped XTS 128-bit: Enable
+          AES Wrapped ECB 192-bit: Enable
+          AES Wrapped CBC 192-bit: Enable
+          AES Wrapped CTR 192-bit: Enable
+          AES Wrapped GCM 192-bit: Enable
+          AES Wrapped ECB 256-bit: Enable
+          AES Wrapped CBC 256-bit: Enable
+          AES Wrapped CTR 256-bit: Enable
+          AES Wrapped GCM 256-bit: Enable
+          AES Wrapped XTS 256-bit: Enable
+          RSA Plain-text 1024-bit: Enable
+          RSA Plain-text 2048-bit: Enable
+          RSA Wrapped 1024-bit: Enable
+          RSA Wrapped 2048-bit: Enable
+          ECC Plain-text 192-bit: Enable
+          ECC Plain-text 224-bit: Enable
+          ECC Plain-text 256-bit: Enable
+          ECC Plain-text 384-bit: Enable
+          ECC Wrapped 192-bit: Enable
+          ECC Wrapped 224-bit: Enable
+          ECC Wrapped 256-bit: Enable
+          ECC Wrapped 384-bit: Enable
+          HASH SHA1: Enable
+          HASH SHA224: Enable
+          HASH SHA256: Enable
+          HASH MD5: Enable
+          True Random Number Generator: Enable
           
-          Instance "g_sce SCE COMMON Driver on r_sce"
-            Name: g_sce
-            Endian flag: CRYPTO_WORD_ENDIAN_LITTLE
-            : 
-            Interfaces which can be accessed through InterfaceGet API.: 
-            AES Plain-text ECB 128-bit: Enable
-            AES Plain-text CBC 128-bit: Enable
-            AES Plain-text CTR 128-bit: Enable
-            AES Plain-text GCM 128-bit: Enable
-            AES Plain-text XTS 128-bit: Enable
-            AES Plain-text ECB 192-bit: Enable
-            AES Plain-text CBC 192-bit: Enable
-            AES Plain-text CTR 192-bit: Enable
-            AES Plain-text GCM 192-bit: Enable
-            AES Plain-text ECB 256-bit: Enable
-            AES Plain-text CBC 256-bit: Enable
-            AES Plain-text CTR 256-bit: Enable
-            AES Plain-text GCM 256-bit: Enable
-            AES Plain-text XTS 256-bit: Enable
-            AES Wrapped ECB 128-bit: Enable
-            AES Wrapped CBC 128-bit: Enable
-            AES Wrapped CTR 128-bit: Enable
-            AES Wrapped GCM 128-bit: Enable
-            AES Wrapped XTS 128-bit: Enable
-            AES Wrapped ECB 192-bit: Enable
-            AES Wrapped CBC 192-bit: Enable
-            AES Wrapped CTR 192-bit: Enable
-            AES Wrapped GCM 192-bit: Enable
-            AES Wrapped ECB 256-bit: Enable
-            AES Wrapped CBC 256-bit: Enable
-            AES Wrapped CTR 256-bit: Enable
-            AES Wrapped GCM 256-bit: Enable
-            AES Wrapped XTS 256-bit: Enable
-            RSA Plain-text 1024-bit: Enable
-            RSA Plain-text 2048-bit: Enable
-            RSA Wrapped 1024-bit: Enable
-            RSA Wrapped 2048-bit: Enable
-            ECC Plain-text 192-bit: Enable
-            ECC Plain-text 224-bit: Enable
-            ECC Plain-text 256-bit: Enable
-            ECC Plain-text 384-bit: Enable
-            ECC Wrapped 192-bit: Enable
-            ECC Wrapped 224-bit: Enable
-            ECC Wrapped 256-bit: Enable
-            ECC Wrapped 384-bit: Enable
-            HASH SHA1: Enable
-            HASH SHA224: Enable
-            HASH SHA256: Enable
-            HASH MD5: Enable
-            True Random Number Generator: Enable
-            
-        Instance "g_sce_trng TRNG Driver on r_sce_trng"
-          Name: g_sce_trng
-          Max. Attempts: 2
+    Instance "g_sf_crypto_trng0 Crypto TRNG Framework on sf_crypto_trng"
+      Name: g_sf_crypto_trng0
+      Name of generated initialization function: sf_crypto_trng_init0
+      Auto Initialization: Enable
+      
+      Instance "g_sf_crypto0 Crypto Framework on sf_crypto"
+        Name: g_sf_crypto0
+        Wait time: TX_WAIT_FOREVER
+        Byte Pool Size: 128
+        Auto Initialization: Enable
+        Force Closure Support: Default
+        
+        Instance "g_sce SCE COMMON Driver on r_sce"
+          Name: g_sce
+          Endian flag: CRYPTO_WORD_ENDIAN_LITTLE
+          : 
+          Interfaces which can be accessed through InterfaceGet API.: 
+          AES Plain-text ECB 128-bit: Enable
+          AES Plain-text CBC 128-bit: Enable
+          AES Plain-text CTR 128-bit: Enable
+          AES Plain-text GCM 128-bit: Enable
+          AES Plain-text XTS 128-bit: Enable
+          AES Plain-text ECB 192-bit: Enable
+          AES Plain-text CBC 192-bit: Enable
+          AES Plain-text CTR 192-bit: Enable
+          AES Plain-text GCM 192-bit: Enable
+          AES Plain-text ECB 256-bit: Enable
+          AES Plain-text CBC 256-bit: Enable
+          AES Plain-text CTR 256-bit: Enable
+          AES Plain-text GCM 256-bit: Enable
+          AES Plain-text XTS 256-bit: Enable
+          AES Wrapped ECB 128-bit: Enable
+          AES Wrapped CBC 128-bit: Enable
+          AES Wrapped CTR 128-bit: Enable
+          AES Wrapped GCM 128-bit: Enable
+          AES Wrapped XTS 128-bit: Enable
+          AES Wrapped ECB 192-bit: Enable
+          AES Wrapped CBC 192-bit: Enable
+          AES Wrapped CTR 192-bit: Enable
+          AES Wrapped GCM 192-bit: Enable
+          AES Wrapped ECB 256-bit: Enable
+          AES Wrapped CBC 256-bit: Enable
+          AES Wrapped CTR 256-bit: Enable
+          AES Wrapped GCM 256-bit: Enable
+          AES Wrapped XTS 256-bit: Enable
+          RSA Plain-text 1024-bit: Enable
+          RSA Plain-text 2048-bit: Enable
+          RSA Wrapped 1024-bit: Enable
+          RSA Wrapped 2048-bit: Enable
+          ECC Plain-text 192-bit: Enable
+          ECC Plain-text 224-bit: Enable
+          ECC Plain-text 256-bit: Enable
+          ECC Plain-text 384-bit: Enable
+          ECC Wrapped 192-bit: Enable
+          ECC Wrapped 224-bit: Enable
+          ECC Wrapped 256-bit: Enable
+          ECC Wrapped 384-bit: Enable
+          HASH SHA1: Enable
+          HASH SHA224: Enable
+          HASH SHA256: Enable
+          HASH MD5: Enable
+          True Random Number Generator: Enable
           
-          Instance "g_sce SCE COMMON Driver on r_sce"
-            Name: g_sce
-            Endian flag: CRYPTO_WORD_ENDIAN_LITTLE
-            : 
-            Interfaces which can be accessed through InterfaceGet API.: 
-            AES Plain-text ECB 128-bit: Enable
-            AES Plain-text CBC 128-bit: Enable
-            AES Plain-text CTR 128-bit: Enable
-            AES Plain-text GCM 128-bit: Enable
-            AES Plain-text XTS 128-bit: Enable
-            AES Plain-text ECB 192-bit: Enable
-            AES Plain-text CBC 192-bit: Enable
-            AES Plain-text CTR 192-bit: Enable
-            AES Plain-text GCM 192-bit: Enable
-            AES Plain-text ECB 256-bit: Enable
-            AES Plain-text CBC 256-bit: Enable
-            AES Plain-text CTR 256-bit: Enable
-            AES Plain-text GCM 256-bit: Enable
-            AES Plain-text XTS 256-bit: Enable
-            AES Wrapped ECB 128-bit: Enable
-            AES Wrapped CBC 128-bit: Enable
-            AES Wrapped CTR 128-bit: Enable
-            AES Wrapped GCM 128-bit: Enable
-            AES Wrapped XTS 128-bit: Enable
-            AES Wrapped ECB 192-bit: Enable
-            AES Wrapped CBC 192-bit: Enable
-            AES Wrapped CTR 192-bit: Enable
-            AES Wrapped GCM 192-bit: Enable
-            AES Wrapped ECB 256-bit: Enable
-            AES Wrapped CBC 256-bit: Enable
-            AES Wrapped CTR 256-bit: Enable
-            AES Wrapped GCM 256-bit: Enable
-            AES Wrapped XTS 256-bit: Enable
-            RSA Plain-text 1024-bit: Enable
-            RSA Plain-text 2048-bit: Enable
-            RSA Wrapped 1024-bit: Enable
-            RSA Wrapped 2048-bit: Enable
-            ECC Plain-text 192-bit: Enable
-            ECC Plain-text 224-bit: Enable
-            ECC Plain-text 256-bit: Enable
-            ECC Plain-text 384-bit: Enable
-            ECC Wrapped 192-bit: Enable
-            ECC Wrapped 224-bit: Enable
-            ECC Wrapped 256-bit: Enable
-            ECC Wrapped 384-bit: Enable
-            HASH SHA1: Enable
-            HASH SHA224: Enable
-            HASH SHA256: Enable
-            HASH MD5: Enable
-            True Random Number Generator: Enable
-            
+      Instance "g_sce_trng TRNG Driver on r_sce_trng"
+        Name: g_sce_trng
+        Max. Attempts: 2
+        
+        Instance "g_sce SCE COMMON Driver on r_sce"
+          Name: g_sce
+          Endian flag: CRYPTO_WORD_ENDIAN_LITTLE
+          : 
+          Interfaces which can be accessed through InterfaceGet API.: 
+          AES Plain-text ECB 128-bit: Enable
+          AES Plain-text CBC 128-bit: Enable
+          AES Plain-text CTR 128-bit: Enable
+          AES Plain-text GCM 128-bit: Enable
+          AES Plain-text XTS 128-bit: Enable
+          AES Plain-text ECB 192-bit: Enable
+          AES Plain-text CBC 192-bit: Enable
+          AES Plain-text CTR 192-bit: Enable
+          AES Plain-text GCM 192-bit: Enable
+          AES Plain-text ECB 256-bit: Enable
+          AES Plain-text CBC 256-bit: Enable
+          AES Plain-text CTR 256-bit: Enable
+          AES Plain-text GCM 256-bit: Enable
+          AES Plain-text XTS 256-bit: Enable
+          AES Wrapped ECB 128-bit: Enable
+          AES Wrapped CBC 128-bit: Enable
+          AES Wrapped CTR 128-bit: Enable
+          AES Wrapped GCM 128-bit: Enable
+          AES Wrapped XTS 128-bit: Enable
+          AES Wrapped ECB 192-bit: Enable
+          AES Wrapped CBC 192-bit: Enable
+          AES Wrapped CTR 192-bit: Enable
+          AES Wrapped GCM 192-bit: Enable
+          AES Wrapped ECB 256-bit: Enable
+          AES Wrapped CBC 256-bit: Enable
+          AES Wrapped CTR 256-bit: Enable
+          AES Wrapped GCM 256-bit: Enable
+          AES Wrapped XTS 256-bit: Enable
+          RSA Plain-text 1024-bit: Enable
+          RSA Plain-text 2048-bit: Enable
+          RSA Wrapped 1024-bit: Enable
+          RSA Wrapped 2048-bit: Enable
+          ECC Plain-text 192-bit: Enable
+          ECC Plain-text 224-bit: Enable
+          ECC Plain-text 256-bit: Enable
+          ECC Plain-text 384-bit: Enable
+          ECC Wrapped 192-bit: Enable
+          ECC Wrapped 224-bit: Enable
+          ECC Wrapped 256-bit: Enable
+          ECC Wrapped 384-bit: Enable
+          HASH SHA1: Enable
+          HASH SHA224: Enable
+          HASH SHA256: Enable
+          HASH MD5: Enable
+          True Random Number Generator: Enable
+          
   Messaging
     Subscriber "Main Thread" 0 0
       

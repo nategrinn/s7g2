@@ -1,0 +1,181 @@
+#include "auth.h"
+#include "auth_qspi_store.h"
+#include "sha256.h"
+#include "ssp_err.h"
+#include <string.h>
+
+/* --------- Record stored in QSPI ---------- */
+#define AUTH_MAGIC   (0x4F534952u) /* "OSIR" */
+#define AUTH_VERSION (1u)
+#define AUTH_ITER_DEFAULT (20000u)
+
+typedef struct __attribute__((packed))
+{
+    uint32_t magic;
+    uint16_t version;
+    uint16_t reserved;
+    uint32_t iterations;
+    uint8_t  salt[16];
+    uint8_t  hash[32];
+    uint32_t crc32;
+} auth_record_t;
+
+extern uint32_t auth_crc32(const void *data, size_t len);
+
+/* Cached record in RAM */
+static auth_record_t s_rec;
+static int s_loaded = 0;
+static int s_configured = 0;
+
+static void secure_zero(void *p, size_t n)
+{
+    volatile uint8_t *v = (volatile uint8_t*)p;
+    while (n--) *v++ = 0;
+}
+
+static int ct_memeq(const uint8_t *a, const uint8_t *b, size_t n)
+{
+    uint8_t r = 0;
+    for (size_t i=0;i<n;i++) r |= (uint8_t)(a[i] ^ b[i]);
+    return (r == 0);
+}
+
+/* NOTE: We try to use sf_crypto_trng if present; otherwise fall back to a weak RNG.
+ * Replace this with sf_crypto_trng0 randomGet in your project for best security.
+ */
+static int get_random_bytes(uint8_t *out, size_t n)
+{
+#ifdef g_sf_crypto_trng0
+    /* If you have sf_crypto_trng enabled and hal_data.h provides g_sf_crypto_trng0,
+       you can implement here using its API. */
+#endif
+    /* Fallback: NOT cryptographically strong; better than constant salt but replace ASAP. */
+    static uint32_t x = 0xA5A5A5A5u;
+    for (size_t i=0;i<n;i++){
+        x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+        out[i] = (uint8_t)(x & 0xFFu);
+    }
+    return 0;
+}
+
+/* Derive a 32-byte hash from password using salt + iterations.
+ * This is an "iterated SHA-256" KDF (PBKDF2-like hardness without HMAC).
+ */
+static int derive_hash(const uint8_t salt[16], uint32_t iter, const char *password, uint8_t out[32])
+{
+    if (!password || !password[0]) return -1;
+
+    sha256_ctx_t ctx;
+    sha256_init(&ctx);
+    sha256_update(&ctx, salt, 16);
+    sha256_update(&ctx, password, strlen(password));
+    sha256_final(&ctx, out);
+
+    for (uint32_t i=1; i<iter; i++)
+    {
+        sha256_init(&ctx);
+        sha256_update(&ctx, out, 32);
+        sha256_final(&ctx, out);
+    }
+
+    return 0;
+}
+
+static int record_validate(const auth_record_t *r)
+{
+    if (r->magic != AUTH_MAGIC) return 0;
+    if (r->version != AUTH_VERSION) return 0;
+    if (r->iterations < 1000u || r->iterations > 500000u) return 0;
+
+    auth_record_t tmp = *r;
+    uint32_t saved = tmp.crc32;
+    tmp.crc32 = 0;
+    uint32_t calc = auth_crc32(&tmp, sizeof(tmp));
+    return (calc == saved);
+}
+
+auth_status_t auth_init(void)
+{
+    if (s_loaded) return AUTH_OK;
+    s_loaded = 1;
+
+    memset(&s_rec, 0, sizeof(s_rec));
+
+    ssp_err_t err = auth_qspi_read(AUTH_QSPI_OFFSET, &s_rec, sizeof(s_rec));
+    if (err != SSP_SUCCESS)
+    {
+        s_configured = 0;
+        return AUTH_ERR_IO;
+    }
+
+    s_configured = record_validate(&s_rec);
+    return AUTH_OK;
+}
+
+int auth_is_configured(void)
+{
+    (void)auth_init();
+    return s_configured;
+}
+
+auth_status_t auth_set_admin_password(const char *new_password)
+{
+    if (!new_password || !new_password[0]) return AUTH_ERR_CRYPTO;
+
+    (void)auth_init();
+
+    auth_record_t r;
+    memset(&r, 0, sizeof(r));
+    r.magic = AUTH_MAGIC;
+    r.version = AUTH_VERSION;
+    r.iterations = AUTH_ITER_DEFAULT;
+
+    if (get_random_bytes(r.salt, sizeof(r.salt)) != 0) return AUTH_ERR_CRYPTO;
+
+    if (derive_hash(r.salt, r.iterations, new_password, r.hash) != 0) return AUTH_ERR_CRYPTO;
+
+    r.crc32 = 0;
+    r.crc32 = auth_crc32(&r, sizeof(r));
+
+    ssp_err_t err = auth_qspi_erase_sector(AUTH_QSPI_OFFSET);
+    if (err != SSP_SUCCESS) return AUTH_ERR_IO;
+
+    err = auth_qspi_program(AUTH_QSPI_OFFSET, &r, sizeof(r));
+    if (err != SSP_SUCCESS) return AUTH_ERR_IO;
+
+    /* cache it */
+    s_rec = r;
+    s_configured = 1;
+
+    return AUTH_OK;
+}
+
+auth_status_t auth_verify_credentials(const char *username, const char *password)
+{
+    (void)auth_init();
+
+    if (!s_configured) return AUTH_ERR_NOT_CONFIGURED;
+
+    if (!username || strcmp(username, "admin") != 0)
+        return AUTH_ERR_BAD_CREDENTIALS;
+
+    uint8_t h[32];
+    if (derive_hash(s_rec.salt, s_rec.iterations, password, h) != 0)
+        return AUTH_ERR_BAD_CREDENTIALS;
+
+    int ok = ct_memeq(h, s_rec.hash, 32);
+    secure_zero(h, sizeof(h));
+
+    return ok ? AUTH_OK : AUTH_ERR_BAD_CREDENTIALS;
+}
+
+auth_status_t auth_clear(void)
+{
+    ssp_err_t err = auth_qspi_erase_sector(AUTH_QSPI_OFFSET);
+    if (err != SSP_SUCCESS) return AUTH_ERR_IO;
+
+    memset(&s_rec, 0, sizeof(s_rec));
+    s_loaded = 1;
+    s_configured = 0;
+    return AUTH_OK;
+}

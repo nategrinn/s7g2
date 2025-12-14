@@ -27,7 +27,7 @@
     <booleanAttribute key="com.renesas.cdt.core.useRemoteTarget" value="true"/>
     <booleanAttribute key="com.renesas.cdt.core.verboseMode" value="false"/>
     <stringAttribute key="com.renesas.cdt.debug.ioview.dsf.registerSelection" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;no&quot;?&gt;&#13;&#10;&lt;selectedRegisterList ioFilePath=&quot;C:\Renesas\e2_studio_6_2_R20180102\DebugComp\Synergy\Iofiles\R7FS7G27H.sfrx&quot;/&gt;&#13;&#10;"/>
-    <stringAttribute key="com.renesas.cdt.debug.ioview.dsf.registerSelection0" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;no&quot;?&gt;&#13;&#10;&lt;selectedRegisterList ioFilePath=&quot;C:\Users\mopak\.eclipse\com.renesas.platform_888051624\DebugComp\Synergy\IoFiles\R7FS7G27H.sfrx&quot;/&gt;&#13;&#10;"/>
+    <stringAttribute key="com.renesas.cdt.debug.ioview.dsf.registerSelection0" value="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;no&quot;?&gt;&#13;&#10;&lt;selectedRegisterList ioFilePath=&quot;C:\Users\MSI-VAMPIRIC\.eclipse\com.renesas.platform_888051624\DebugComp\Synergy\IoFiles\R7FS7G27H.sfrx&quot;/&gt;&#13;&#10;"/>
     <stringAttribute key="com.renesas.cdt.launch.dsf.IO_MAP" value="${support_area_loc}"/>
     <booleanAttribute key="com.renesas.cdt.launch.dsf.USE_DEFAULT_IO_MAP" value="true"/>
     <listAttribute key="com.renesas.cdt.launch.dsf.downloadImages">
@@ -36,6 +36,9 @@
     <booleanAttribute key="com.renesas.cdt.launch.dsf.downloadImagesUpgradedV30" value="true"/>
     <stringAttribute key="com.renesas.cdt.launch.dsf.launchSeqType" value="com.renesas.cdt.launch.dsf.launchSequence.e2GdbServer"/>
     <stringAttribute key="com.renesas.cdt.launch.dsf.serverPath" value="${renesas.support.targetLoc:com.renesas.ide.supportfiles.synergy.debug.debugSupportFileTarget}\e2-server-gdb"/>
+    <listAttribute key="com.renesas.cdt.launch.ui.address.mruList.memoryMonitorExpression">
+        <listEntry value="0x007FF000"/>
+    </listAttribute>
     <booleanAttribute key="com.renesas.hardwaredebug.arm.jlink.break.allowSimulation" value="false"/>
     <booleanAttribute key="com.renesas.hardwaredebug.arm.jlink.break.useFlashBreakpoints" value="false"/>
     <booleanAttribute key="com.renesas.hardwaredebug.arm.jlink.break.useFlashBreakpoints.resetorrepurposed" value="true"/>

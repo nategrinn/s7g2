@@ -4,5 +4,5 @@
 
 USER_OBJS :=
 
-LIBS := -lgx -ltx -lDSP_Lib -lNN_Lib -lfmi_cm4_s7g2_gcc -lfmi_R7FS7G27H3A01CFC_gcc -lfx -lux -lux_host_class_storage -lnxd
+LIBS := -lgx -ltx -lDSP_Lib -lNN_Lib -lfmi_cm4_s7g2_gcc -lfmi_R7FS7G27H3A01CFC_gcc -lfx -lux -lux_host_class_storage -lnxd -lcrypto_cm4_s7g2_gcc
 

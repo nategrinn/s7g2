@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<item key="hasShownOverlayPopupBefore" value="true"/>
+	<item key="replaceBarOpen" value="true"/>
+	<list key="searchhistory">
+		<item value="http_send_json_directory"/>
+		<item value="ADMIN_USERNAME"/>
+		<item value="http_send_json_error"/>
+		<item value="http_send_static_file"/>
+		<item value="/upload-chunk"/>
+		<item value="auth_last_qspi_op"/>
+		<item value="auth_verify_credentials_public"/>
+		<item value="auth_is_configured"/>
+		<item value="qqspi_ensure_open"/>
+		<item value="auth_is_provisioned"/>
+		<item value="auth_last_qspi_err_u32"/>
+		<item value="form_get_value"/>
+		<item value="http_send_data"/>
+		<item value="http_handle_auth_check"/>
+		<item value="/api/set_password"/>
+	</list>
+	<list key="replacehistory">
+		<item value="qspi_ensure_open"/>
+	</list>
+</section>

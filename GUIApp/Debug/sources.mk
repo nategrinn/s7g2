@@ -53,8 +53,8 @@ MAP :=
 
 # Every subdirectory with source files must be described here
 SUBDIRS := \
-src/gui \
 src \
+src/gui \
 src/hardware \
 src/led_control \
 src/synergy_gen \
@@ -77,6 +77,9 @@ synergy/ssp/src/driver/r_sci_spi \
 synergy/ssp/src/framework/el/nx_md5 \
 synergy/ssp/src/framework/el/nxd_application_layer/nxd_dhcp \
 synergy/ssp/src/framework/el/nxd_application_layer/nxd_http_server \
+synergy/ssp/src/framework/sf_crypto \
+synergy/ssp/src/framework/sf_crypto_hash \
+synergy/ssp/src/framework/sf_crypto_trng \
 synergy/ssp/src/framework/sf_el_gx \
 synergy/ssp/src/framework/sf_el_nx \
 synergy/ssp/src/framework/sf_el_nx/phy \

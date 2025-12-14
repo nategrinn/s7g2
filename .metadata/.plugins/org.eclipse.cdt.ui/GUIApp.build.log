@@ -1,0 +1,19 @@
+19:30:32 **** Incremental Build of configuration Debug for project GUIApp ****
+make -r -j12 all 
+Building file: ../src/http_server_user.c
+../src/http_server_user.c: In function 'http_handle_login':
+../src/http_server_user.c:1413:72: warning: null character(s) preserved in literal
+ 1413 |         if ((strcmp(username, ADMIN_USERNAME) == 0) && (password[0] != ' '))
+      |                                                                        ^
+At top level:
+../src/http_server_user.c:73:13: warning: 'http_send_json_error' defined but not used [-Wunused-function]
+   73 | static UINT http_send_json_error(NX_HTTP_SERVER * server_ptr,
+      |             ^~~~~~~~~~~~~~~~~~~~
+Building target: GUIApp.elf
+arm-none-eabi-objcopy -O srec "GUIApp.elf"  "GUIApp.srec"
+arm-none-eabi-size --format=berkeley "GUIApp.elf"
+   text	   data	    bss	    dec	    hex	filename
+ 749380	   4032	 501004	1254416	 132410	GUIApp.elf
+
+19:30:34 Build Finished. 0 errors, 2 warnings. (took 1s.963ms)
+

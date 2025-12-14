@@ -1,0 +1,295 @@
+#include "auth_manager.h"
+
+#include "hal_data.h"
+#include "common_data.h"
+
+#include "sha256_mini.h"
+
+#include "fx_api.h"
+#include "tx_api.h"
+
+#include <string.h>
+#include <stdio.h>
+
+/* ---- QSPI diagnostics (for JSON error reporting) ---- */
+static const char * s_last_qspi_op = "";
+static uint32_t     s_last_qspi_err = 0u;
+
+const char * auth_last_qspi_op(void) { return s_last_qspi_op; }
+uint32_t     auth_last_qspi_err_u32(void) { return s_last_qspi_err; }
+
+static void qspi_set_diag(const char *op, ssp_err_t err)
+{
+    s_last_qspi_op = op ? op : "";
+    s_last_qspi_err = (uint32_t) err;
+}
+
+extern FX_MEDIA * g_usb_media;
+
+/* ---------------- QSPI storage layout ----------------
+ * W25Q64FV = 8 MiB, sectors are 4 KiB.
+ * We store one 4 KiB "record sector" near the end of flash.
+ *
+ * IMPORTANT: verify this region is NOT used by your XIP/ROM mapping.
+ */
+#ifndef AUTH_QSPI_BASE_ADDR
+#define AUTH_QSPI_BASE_ADDR   (0x007F0000u)  /* last 64 KiB area; we'll use first 4 KiB of it */
+#endif
+
+#define AUTH_QSPI_SECTOR_SIZE (4096u)
+#define AUTH_QSPI_MAGIC       (0x41555448u)  /* 'AUTH' */
+#define AUTH_QSPI_VERSION     (1u)
+
+#define AUTH_USERNAME         "admin"
+
+/* Iterations: increase for better brute-force resistance (costs CPU at login).
+ * With S7G2 @ 240MHz, 20k may be OK; start conservative. */
+#define AUTH_HASH_ITERS       (5000u)
+
+typedef struct __attribute__((packed)) auth_record_s
+{
+    uint32_t magic;      /* 'AUTH' */
+    uint16_t version;    /* 1 */
+    uint16_t reserved;
+    uint32_t iters;      /* AUTH_HASH_ITERS */
+    uint8_t  salt[16];
+    uint8_t  hash[32];   /* sha256 iterated hash */
+    uint32_t crc32;      /* over all previous bytes */
+    uint8_t  pad[AUTH_QSPI_SECTOR_SIZE - (4+2+2+4+16+32+4)];
+} auth_record_t;
+
+/* CRC32 (polynomial 0xEDB88320) */
+static uint32_t crc32_sw(const uint8_t *data, uint32_t len)
+{
+    uint32_t crc = 0xFFFFFFFFu;
+    for (uint32_t i=0;i<len;i++)
+    {
+        crc ^= data[i];
+        for (uint32_t b=0;b<8;b++)
+        {
+            uint32_t mask = (uint32_t)-(int32_t)(crc & 1u);
+            crc = (crc >> 1) ^ (0xEDB88320u & mask);
+        }
+    }
+    return ~crc;
+}
+
+/* ---------- QSPI helpers (Synergy r_qspi API) ---------- */
+
+static int qspi_ensure_open(void)
+{
+    static int opened = 0;
+    if (opened) return 0;
+
+    ssp_err_t err = g_qspi0.p_api->open(g_qspi0.p_ctrl, g_qspi0.p_cfg);
+    if (SSP_SUCCESS != err)
+    {
+        qspi_set_diag("\"open\"", err); return -1;
+    }
+    opened = 1;
+    return 0;
+}
+
+static int qspi_read(uint32_t addr, uint8_t *dst, uint32_t len)
+{
+    if (qqspi_ensure_open() != 0) return -1;
+
+    ssp_err_t err = g_qspi0.p_api->read(g_qspi0.p_ctrl, dst, addr, len);
+    return (SSP_SUCCESS == err) ? 0 : -1;
+}
+
+static int qspi_erase_4k(uint32_t addr)
+{
+    if (qqspi_ensure_open() != 0) return -1;
+
+    /* Many Synergy QSPI drivers erase by size. If your API differs, adjust this call. */
+    ssp_err_t err = g_qspi0.p_api->erase(g_qspi0.p_ctrl, addr, AUTH_QSPI_SECTOR_SIZE);
+    return (SSP_SUCCESS == err) ? 0 : -1;
+}
+
+static int qspi_program(uint32_t addr, const uint8_t *src, uint32_t len)
+{
+    if (qqspi_ensure_open() != 0) return -1;
+
+    /* You said you have pageProgram(). Use it to write chunks <= page size. */
+    uint32_t remaining = len;
+    uint32_t off = 0;
+    while (remaining)
+    {
+        uint32_t chunk = remaining;
+        if (chunk > 256u) chunk = 256u; /* W25Q64 page size */
+
+        ssp_err_t err = g_qspi0.p_api->pageProgram(g_qspi0.p_ctrl, (uint8_t *)&src[off], addr + off, chunk);
+        if (SSP_SUCCESS != err) { qspi_set_diag(\"program\", err); return -1; }
+
+        off += chunk;
+        remaining -= chunk;
+    }
+    return 0;
+}
+
+/* ---------- Salt + hash ---------- */
+
+static void derive_hash(const uint8_t salt[16], const char *password, uint32_t iters, uint8_t out[32])
+{
+    sha256_ctx_t ctx;
+    uint8_t tmp[32];
+
+    sha256_init(&ctx);
+    sha256_update(&ctx, salt, 16u);
+    sha256_update(&ctx, (const uint8_t *)password, (size_t)strlen(password));
+    sha256_final(&ctx, tmp);
+
+    for (uint32_t i = 1; i < iters; ++i)
+    {
+        sha256(tmp, 32u, tmp);
+    }
+    memcpy(out, tmp, 32u);
+}
+
+static int trng_fill(uint8_t *dst, uint32_t len)
+{
+    /* g_sce_trng comes from common_data.c */
+    ssp_err_t err = g_sce_trng.p_api->open(g_sce_trng.p_ctrl, g_sce_trng.p_cfg);
+    if (SSP_SUCCESS != err)
+    {
+        return -1;
+    }
+
+    /* Many TRNG APIs expose read(). If your TRNG API differs, adjust here. */
+    err = g_sce_trng.p_api->read(g_sce_trng.p_ctrl, dst, len);
+
+    (void) g_sce_trng.p_api->close(g_sce_trng.p_ctrl);
+
+    return (SSP_SUCCESS == err) ? 0 : -1;
+}
+
+/* ---------- Record IO ---------- */
+
+static int auth_record_read(auth_record_t *rec)
+{
+    if (qspi_read(AUTH_QSPI_BASE_ADDR, (uint8_t *)rec, sizeof(*rec)) != 0)
+        return -1;
+
+    if (rec->magic != AUTH_QSPI_MAGIC || rec->version != AUTH_QSPI_VERSION)
+        return -2;
+
+    uint32_t crc = crc32_sw((const uint8_t *)rec, (uint32_t)(sizeof(*rec) - 4u));
+    if (crc != rec->crc32)
+        return -3;
+
+    return 0;
+}
+
+static int auth_record_write(const auth_record_t *rec)
+{
+    /* Erase 4K sector then program */
+    if (qspi_erase_4k(AUTH_QSPI_BASE_ADDR) != 0)
+        return -1;
+
+    if (qspi_program(AUTH_QSPI_BASE_ADDR, (const uint8_t *)rec, sizeof(*rec)) != 0)
+        return -2;
+
+    return 0;
+}
+
+/* ---------- Public API ---------- */
+
+int auth_init(void)
+{
+    /* Ensure QSPI is accessible early. */
+    if (qqspi_ensure_open() != 0)
+        return -1;
+    return 0;
+}
+
+int auth_is_provisioned(void)
+{
+    auth_record_t rec;
+    return (auth_record_read(&rec) == 0) ? 1 : 0;
+}
+
+int auth_verify_credentials(const char *username, const char *password)
+{
+    if (!username || !password) return 0;
+    if (strcmp(username, AUTH_USERNAME) != 0) return 0;
+
+    auth_record_t rec;
+    if (auth_record_read(&rec) != 0)
+    {
+        /* Not provisioned yet: reject (or allow default "admin"/"admin" if you prefer). */
+        return 0;
+    }
+
+    uint8_t calc[32];
+    derive_hash(rec.salt, password, rec.iters, calc);
+
+    return (memcmp(calc, rec.hash, 32u) == 0) ? 1 : 0;
+}
+
+int auth_set_admin_password(const char *new_password)
+{
+    if (!new_password || new_password[0] == '\0')
+        return -1;
+
+    auth_record_t rec;
+    memset(&rec, 0, sizeof(rec));
+    rec.magic   = AUTH_QSPI_MAGIC;
+    rec.version = AUTH_QSPI_VERSION;
+    rec.iters   = AUTH_HASH_ITERS;
+
+    if (trng_fill(rec.salt, sizeof(rec.salt)) != 0)
+    {
+        /* Fallback: weak salt based on ticks (still better than none). */
+        ULONG t = tx_time_get();
+        for (unsigned i=0;i<sizeof(rec.salt);i++)
+        {
+            rec.salt[i] = (uint8_t)(t >> ((i & 3u) * 8u));
+        }
+    }
+
+    derive_hash(rec.salt, new_password, rec.iters, rec.hash);
+    rec.crc32 = crc32_sw((const uint8_t *)&rec, (uint32_t)(sizeof(rec) - 4u));
+
+    return auth_record_write(&rec);
+}
+
+int auth_recovery_allowed(void)
+{
+    /* Simple physical-ish recovery:
+     * If a file named ALLOW_RESET.TXT exists in USB root, we allow password reset.
+     */
+    if ((g_usb_media == FX_NULL) || (g_usb_media->fx_media_id != FX_MEDIA_ID))
+        return 0;
+
+    FX_FILE f;
+    UINT fx = fx_file_open(g_usb_media, &f, "ALLOW_RESET.TXT", FX_OPEN_FOR_READ);
+    if (fx == FX_SUCCESS)
+    {
+        fx_file_close(&f);
+        return 1;
+    }
+    return 0;
+}
+
+/* ---- Public API for HTTP server ---- */
+uint8_t auth_is_configured(void)
+{
+    return (auth_is_provisioned() != 0) ? 1u : 0u;
+}
+
+uint8_t auth_verify_credentials_public(const char *username, const char *password)
+{
+    return (auth_verify_credentials(username, password) != 0) ? 1u : 0u;
+}
+
+ssp_err_t auth_set_password(const char *new_password)
+{
+    if (!new_password || new_password[0] == '\0') return SSP_ERR_INVALID_ARGUMENT;
+    return (auth_set_admin_password(new_password) == 0) ? SSP_SUCCESS : SSP_ERR_INTERNAL;
+}
+
+ssp_err_t auth_reset_password(const char *new_password)
+{
+    return auth_set_password(new_password);
+}

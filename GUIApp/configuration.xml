@@ -1137,10 +1137,6 @@
       <description>SF Crypto Common Framework: Provides=[SF Crypto Common, ThreadX]</description>
       <originalPack>Renesas.Synergy.2.7.0.pack</originalPack>
     </component>
-    <component apiversion="" class="Framework Services" condition="" group="all" subgroup="sf_crypto_cipher" variant="" vendor="Renesas" version="2.7.0">
-      <description>SF Crypto CIPHER Framework: Provides=[SF Crypto CIPHER] , Requires=[SF Crypto Common, CIPHER, ThreadX]</description>
-      <originalPack>Renesas.Synergy.2.7.0.pack</originalPack>
-    </component>
     <component apiversion="" class="Framework Services" condition="" group="all" subgroup="sf_crypto_trng" variant="" vendor="Renesas" version="2.7.0">
       <description>SF Crypto TRNG Framework: Provides=[SF Crypto TRNG, ThreadX] , Requires=[SF Crypto Common, TRNG Driver]</description>
       <originalPack>Renesas.Synergy.2.7.0.pack</originalPack>
@@ -1151,6 +1147,10 @@
     </component>
     <component apiversion="" class="HAL Drivers" condition="" group="all" subgroup="r_sce" variant="" vendor="Renesas" version="2.7.0">
       <description>Secure Cryptography Engine: Provides=[TRNG, AES, HASH, RSA, DSA, TDES, ARC4, ECC, KEY_INSTALLATION]</description>
+      <originalPack>Renesas.Synergy.2.7.0.pack</originalPack>
+    </component>
+    <component apiversion="" class="Framework Services" condition="" group="all" subgroup="sf_crypto_hash" variant="" vendor="Renesas" version="2.7.0">
+      <description>SF Crypto HASH Framework: Provides=[SF Crypto HASH] , Requires=[SF Crypto Common, HASH, ThreadX]</description>
       <originalPack>Renesas.Synergy.2.7.0.pack</originalPack>
     </component>
   </synergyComponentSelection>
@@ -1650,19 +1650,19 @@
       <property id="module.driver.qspi.name" value="g_qspi0"/>
       <property id="module.driver.qspi.address_mode" value="module.driver.qspi.address_mode.byte_3"/>
     </module>
-    <module id="module.framework.sf_crypto_trng.1150086646">
-      <property id="module.framework.sf_crypto_trng.name" value="g_sf_crypto_trng0"/>
-      <property id="module.framework.sf_crypto_trng.init_function" value="sf_crypto_trng_init0"/>
-      <property id="module.framework.sf_crypto_trng.init" value="module.framework.sf_crypto_trng.init.enable"/>
+    <module id="module.framework.sf_crypto_hash.1336239377">
+      <property id="module.framework.sf_crypto_hash.name" value="g_sf_crypto_hash0"/>
+      <property id="module.framework.sf_crypto_hash.init_function" value="sf_crypto_hash_init0"/>
+      <property id="module.framework.sf_crypto_hash.init" value="module.framework.sf_crypto_hash.init.enable"/>
     </module>
-    <module id="module.framework.sf_crypto.1842588417">
+    <module id="module.framework.sf_crypto.1002155898">
       <property id="module.framework.sf_crypto.name" value="g_sf_crypto0"/>
       <property id="module.framework.sf_crypto.wait_option" value="TX_WAIT_FOREVER"/>
-      <property id="module.framework.sf_crypto.memory_pool_size" value="1200"/>
+      <property id="module.framework.sf_crypto.memory_pool_size" value="128"/>
       <property id="module.framework.sf_crypto.init" value="module.framework.sf_crypto.init.enable"/>
       <property id="module.framework.sf_crypto.close_option" value="module.framework.sf_crypto.close_option.default"/>
     </module>
-    <module id="module.driver.sce.529851068">
+    <module id="module.driver.sce.526853074">
       <property id="module.driver.sce.name" value="g_sce"/>
       <property id="module.driver.sce.endian_flag" value="module.driver.sce.endian_flag.big_endian"/>
       <property id="module.driver.sce.intentional_blank_line_1" value=""/>
@@ -1713,17 +1713,19 @@
       <property id="module.driver.sce.crypto_hash_md5" value="module.driver.sce.crypto_hash_md5.enable"/>
       <property id="module.driver.sce.crypto_trng" value="module.driver.sce.crypto_trng.enable"/>
     </module>
-    <module id="module.driver.sce_trng.2018184263">
+    <module id="module.driver.sce_hash.38664468">
+      <property id="module.driver.sce_hash.name" value="g_sce_hash_0"/>
+      <property id="module.driver.sce_hash.algorithm" value="module.driver.sce_hash.algorithm.sha256"/>
+      <property id="module.driver.sce_hash.algorithm_id" value=""/>
+    </module>
+    <module id="module.framework.sf_crypto_trng.1506678365">
+      <property id="module.framework.sf_crypto_trng.name" value="g_sf_crypto_trng0"/>
+      <property id="module.framework.sf_crypto_trng.init_function" value="sf_crypto_trng_init0"/>
+      <property id="module.framework.sf_crypto_trng.init" value="module.framework.sf_crypto_trng.init.enable"/>
+    </module>
+    <module id="module.driver.sce_trng.1923835821">
       <property id="module.driver.sce_trng.name" value="g_sce_trng"/>
       <property id="module.driver.sce_trng.nattempts" value="2"/>
-    </module>
-    <module id="module.framework.sf_crypto_cipher.777525788">
-      <property id="module.framework.sf_crypto_cipher.name" value="g_sf_crypto_cipher0"/>
-      <property id="module.framework.sf_crypto_cipher.key_type" value="module.framework.sf_crypto_cipher.key_type.rsa_plain_text"/>
-      <property id="module.framework.sf_crypto_cipher.key_size" value="module.framework.sf_crypto_cipher.key_size.rsa_2048b"/>
-      <property id="module.framework.sf_crypto_cipher.cipher_chaining_mode" value="module.framework.sf_crypto_cipher.cipher_chaining_mode.SF_CRYPTO_CIPHER_MODE_ECB"/>
-      <property id="module.framework.sf_crypto_cipher.init_function" value="sf_crypto_cipher_init0"/>
-      <property id="module.framework.sf_crypto_cipher.init" value="module.framework.sf_crypto_cipher.init.enable"/>
     </module>
     <context id="_hal.0">
       <stack module="module.driver.ioport_on_ioport.918725209"/>
@@ -1856,17 +1858,20 @@
           <stack module="module.el.ns_md5.1201621372" requires="module.el.nx_http_common.requires.nxd_md5"/>
         </stack>
       </stack>
-      <stack module="module.framework.sf_crypto_cipher.777525788">
-        <stack module="module.framework.sf_crypto.1842588417" requires="module.framework.sf_crypto_cipher.requires.sf_crypto">
-          <stack module="module.driver.sce.529851068" requires="module.framework.sf_crypto.requires.cripto_hw"/>
+      <stack module="module.framework.sf_crypto_hash.1336239377">
+        <stack module="module.framework.sf_crypto.1002155898" requires="module.framework.sf_crypto_hash.requires.sf_crypto">
+          <stack module="module.driver.sce.526853074" requires="module.framework.sf_crypto.requires.cripto_hw"/>
         </stack>
-        <stack module="module.framework.sf_crypto_trng.1150086646" requires="module.framework.sf_crypto_cipher.requires.sf_crypto_trng">
-          <stack module="module.framework.sf_crypto.1842588417" requires="module.framework.sf_crypto_trng.requires.sf_crypto">
-            <stack module="module.driver.sce.529851068" requires="module.framework.sf_crypto.requires.cripto_hw"/>
-          </stack>
-          <stack module="module.driver.sce_trng.2018184263" requires="module.framework.sf_crypto_trng.requires.sce_trng">
-            <stack module="module.driver.sce.529851068" requires="module.driver.sce"/>
-          </stack>
+        <stack module="module.driver.sce_hash.38664468" requires="module.framework.sf_crypto_hash.requires.hal_hash">
+          <stack module="module.driver.sce.526853074" requires="module.driver.sce"/>
+        </stack>
+      </stack>
+      <stack module="module.framework.sf_crypto_trng.1506678365">
+        <stack module="module.framework.sf_crypto.1002155898" requires="module.framework.sf_crypto_trng.requires.sf_crypto">
+          <stack module="module.driver.sce.526853074" requires="module.framework.sf_crypto.requires.cripto_hw"/>
+        </stack>
+        <stack module="module.driver.sce_trng.1923835821" requires="module.framework.sf_crypto_trng.requires.sce_trng">
+          <stack module="module.driver.sce.526853074" requires="module.driver.sce"/>
         </stack>
       </stack>
     </context>
@@ -1952,6 +1957,9 @@
     <config id="config.framework.sf_el_ux_dcd_fs">
       <property id="config.framework.sf_el_ux_dcd_fs.irq_ipl" value="board.icu.common.irq.disabled"/>
       <property id="config.framework.sf_el_ux_dcd_fs.VCC_LDO_Regulator" value="config.framework.sf_el_ux_dcd_fs.VCC_LDO_Regulator.disabled"/>
+    </config>
+    <config id="config.framework.sf_crypto_hash">
+      <property id="config.framework.sf_crypto_hash.param_checking_enable" value="config.framework.sf_crypto_hash.param_checking_enable.bsp"/>
     </config>
     <config id="config.driver.riic">
       <property id="config.driver.riic.param_checking_enable" value="config.driver.riic.param_checking_enable.enabled"/>
@@ -2074,9 +2082,6 @@
     </config>
     <config id="config.framework.sf_jpeg_decode">
       <property id="config.framework.sf_jpeg_decode.param_checking_enable" value="config.framework.sf_jpeg_decode.param_checking_enable.enabled"/>
-    </config>
-    <config id="config.framework.sf_crypto_cipher">
-      <property id="config.framework.sf_crypto_cipher.param_checking_enable" value="config.framework.sf_crypto_cipher.param_checking_enable.bsp"/>
     </config>
     <config id="config.el.fx"/>
     <config id="config.driver.sci_spi">

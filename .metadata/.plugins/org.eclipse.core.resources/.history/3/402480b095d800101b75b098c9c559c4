@@ -1,0 +1,2053 @@
+/*
+ * http_server_user.c
+ *
+ * User HTTP server callbacks for SK-S7G2 file browser + uploads.
+ */
+
+#include "network_thread.h"
+#include "tx_api.h"
+#include "nx_api.h"
+#include "nxd_http_server.h"
+#include "fx_api.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "hmi_state.h"
+#include "led_control/led.h"
+
+#include "auth_manager.h"
+
+#define MAX_PATH_LEN                (255u)
+#define MAX_NAME_CHARS              (14u)      /* your tuned value */
+#define HTTP_UPLOAD_BUFFER_SIZE     (1024u)    /* or 1024 if you prefer */
+#define HTTP_UPLOAD_CHUNK_MAX_SIZE  (2048u)
+
+#define FOLDER_ICON_PATH            "/rsc/folder_icon.png"
+#define FILE_ICON_PATH              "/rsc/file_ico.png"
+
+/* ------------- Simple authentication ----------------- */
+#define ADMIN_USERNAME   "admin"
+#define ADMIN_PASSWORD   "admin"   /* change to what you want */
+
+static UINT g_logged_in = 0;       /* 0 = not logged in, 1 = logged in */
+
+/* --- Auth + QSPI-backed password store --------------------------------- */
+/* We lazy-init crypto/QSPI once, and never block the HTTP callback forever. */
+static UINT g_auth_inited = 0u;
+static UINT g_auth_init_failed = 0u;
+
+/* ---------- Local helpers ---------- */
+
+static UINT http_send_data(NX_HTTP_SERVER * server_ptr, const CHAR * data, UINT length);
+static UINT http_send_error(NX_HTTP_SERVER * server_ptr, const CHAR * msg);
+static CHAR * format_size(ULONG bytes, CHAR * buffer, size_t buffer_size);
+static void  url_decode(const CHAR * src, CHAR * dst, UINT dst_size);
+static void form_get_value(const CHAR * body, const CHAR * key, CHAR * out, UINT out_size);
+
+static UINT http_send_static_file(NX_HTTP_SERVER * server_ptr, const CHAR * path_on_usb);
+static UINT http_send_file_download(NX_HTTP_SERVER * server_ptr, const CHAR * file_path);
+static UINT http_send_directory_listing(NX_HTTP_SERVER * server_ptr, const CHAR * path);
+static UINT http_handle_upload_chunk(NX_HTTP_SERVER * server_ptr, CHAR * resource, NX_PACKET * packet_ptr);
+
+static void http_auth_ensure_init(void)
+{
+    if (g_auth_inited || g_auth_init_failed) return;
+
+    if (auth_init() == 0)
+    {
+        g_auth_inited = 1u;
+    }
+    else
+    {
+        g_auth_init_failed = 1u;
+    }
+}
+
+/* GET /api/auth_status : tells the UI if a password is already provisioned. */
+static UINT http_handle_auth_status(NX_HTTP_SERVER * server_ptr)
+{
+    http_auth_ensure_init();
+
+    /* If QSPI isn't available, report not configured (UI will show setup/reset with error). */
+    int provisioned = 0;
+    if (!g_auth_init_failed)
+    {
+        provisioned = auth_is_provisioned();
+    }
+
+    CHAR body[128];
+    UINT body_len = (UINT) snprintf(body, sizeof(body),
+                                   "{\"configured\":%s,\"logged_in\":%s}",
+                                   provisioned ? "true" : "false",
+                                   g_logged_in ? "true" : "false");
+
+    CHAR header[160];
+    UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                     "HTTP/1.0 200 OK\r\n"
+                                     "Content-Type: application/json\r\n"
+                                     "Content-Length: %u\r\n"
+                                     "Connection: close\r\n"
+                                     "\r\n",
+                                     (unsigned) body_len);
+
+    http_send_data(server_ptr, header, header_len);
+    http_send_data(server_ptr, body, body_len);
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+/* POST /api/set_password : first-time provisioning (requires login). */
+static UINT http_handle_set_password(NX_HTTP_SERVER * server_ptr, NX_PACKET * packet_ptr)
+{
+    if (!g_logged_in)
+    {
+        return http_handle_auth_check(server_ptr);
+    }
+
+    http_auth_ensure_init();
+    if (g_auth_init_failed)
+    {
+        return http_send_error(server_ptr, "QSPI init failed\r\n");
+    }
+
+    ULONG content_length = 0;
+    UINT  status = nx_http_server_content_length_get_extended(packet_ptr, &content_length);
+    if ((status != NX_SUCCESS) || (content_length == 0u) || (content_length > 256u))
+    {
+        return http_send_error(server_ptr, "Bad request\r\n");
+    }
+
+    CHAR body[257];
+    ULONG offset = 0, total = 0;
+
+    while ((offset < content_length) && (total < (sizeof(body) - 1u)))
+    {
+        ULONG to_read = content_length - offset;
+        if (to_read > (sizeof(body) - 1u - total)) to_read = sizeof(body) - 1u - total;
+
+        UINT actual = 0u;
+        status = nx_http_server_content_get_extended(server_ptr, packet_ptr, offset,
+                                                     &body[total], to_read, &actual);
+        if ((status != NX_SUCCESS) && (status != NX_HTTP_DATA_END))
+        {
+            return http_send_error(server_ptr, "Read error\r\n");
+        }
+
+        if (actual == 0u) break;
+        offset += actual;
+        total  += actual;
+        if (status == NX_HTTP_DATA_END) break;
+    }
+    body[total] = '\0';
+
+    CHAR new_pass[64];
+    new_pass[0] = '\0';
+    form_get_value(body, "password=", new_pass, sizeof(new_pass));
+
+    if (new_pass[0] == '\0')
+    {
+        return http_send_error(server_ptr, "Missing password\r\n");
+    }
+
+    if (auth_set_admin_password(new_pass) != 0)
+    {
+        return http_send_error(server_ptr, "Failed to store password\r\n");
+    }
+
+    static const CHAR ok[] = "{\"status\":\"ok\"}";
+    CHAR header[160];
+    UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                     "HTTP/1.0 200 OK\r\n"
+                                     "Content-Type: application/json\r\n"
+                                     "Content-Length: %u\r\n"
+                                     "Connection: close\r\n"
+                                     "\r\n",
+                                     (unsigned) strlen(ok));
+    http_send_data(server_ptr, header, header_len);
+    http_send_data(server_ptr, ok, (UINT) strlen(ok));
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+/* POST /api/reset_password : recovery (requires ALLOW_RESET.TXT on USB root). */
+static UINT http_handle_reset_password(NX_HTTP_SERVER * server_ptr, NX_PACKET * packet_ptr)
+{
+    http_auth_ensure_init();
+    if (g_auth_init_failed)
+    {
+        return http_send_error(server_ptr, "QSPI init failed\r\n");
+    }
+
+    if (!auth_recovery_allowed())
+    {
+        return http_send_error(server_ptr, "Recovery not enabled (create ALLOW_RESET.TXT on USB root)\r\n");
+    }
+
+    ULONG content_length = 0;
+    UINT  status = nx_http_server_content_length_get_extended(packet_ptr, &content_length);
+    if ((status != NX_SUCCESS) || (content_length == 0u) || (content_length > 256u))
+    {
+        return http_send_error(server_ptr, "Bad request\r\n");
+    }
+
+    CHAR body[257];
+    ULONG offset = 0, total = 0;
+
+    while ((offset < content_length) && (total < (sizeof(body) - 1u)))
+    {
+        ULONG to_read = content_length - offset;
+        if (to_read > (sizeof(body) - 1u - total)) to_read = sizeof(body) - 1u - total;
+
+        UINT actual = 0u;
+        status = nx_http_server_content_get_extended(server_ptr, packet_ptr, offset,
+                                                     &body[total], to_read, &actual);
+        if ((status != NX_SUCCESS) && (status != NX_HTTP_DATA_END))
+        {
+            return http_send_error(server_ptr, "Read error\r\n");
+        }
+
+        if (actual == 0u) break;
+        offset += actual;
+        total  += actual;
+        if (status == NX_HTTP_DATA_END) break;
+    }
+    body[total] = '\0';
+
+    CHAR new_pass[64];
+    new_pass[0] = '\0';
+    form_get_value(body, "password=", new_pass, sizeof(new_pass));
+
+    if (new_pass[0] == '\0')
+    {
+        return http_send_error(server_ptr, "Missing password\r\n");
+    }
+
+    if (auth_set_admin_password(new_pass) != 0)
+    {
+        return http_send_error(server_ptr, "Failed to store password\r\n");
+    }
+
+    g_logged_in = 0u;
+
+    static const CHAR ok[] = "{\"status\":\"ok\"}";
+    CHAR header[160];
+    UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                     "HTTP/1.0 200 OK\r\n"
+                                     "Content-Type: application/json\r\n"
+                                     "Content-Length: %u\r\n"
+                                     "Connection: close\r\n"
+                                     "\r\n",
+                                     (unsigned) strlen(ok));
+    http_send_data(server_ptr, header, header_len);
+    http_send_data(server_ptr, ok, (UINT) strlen(ok));
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+
+/* USB FileX media provided by the USB thread (must be defined there). */
+extern FX_MEDIA * g_usb_media;
+
+/* -----------------------------------------------------------------------
+ *  Static buffers to reduce stack usage in HTTP callback thread
+ * ----------------------------------------------------------------------- */
+static CHAR g_entry_name[FX_MAX_LONG_NAME_LEN + 1];
+static CHAR g_current_path[MAX_PATH_LEN + 1];
+static CHAR g_breadcrumb[256];
+static CHAR g_parent_path[MAX_PATH_LEN + 1];
+static CHAR g_header_buf[256];
+static CHAR g_tmp_buf[512];
+static CHAR g_line_buf[512];
+static CHAR g_size_buf[32];
+static CHAR g_short_name[64];
+
+
+/* Send raw bytes to the client from the callback using NetX HTTP extended API. */
+static UINT http_send_data(NX_HTTP_SERVER * server_ptr, const CHAR * data, UINT length)
+{
+    hmi_set_status_led(LED_ON, LED_OFF, LED_ON);
+    return nx_http_server_callback_data_send(server_ptr, (VOID *) data, (ULONG) length);
+}
+
+/* Send a simple HTTP 302 redirect to the given location. */
+static UINT http_send_redirect(NX_HTTP_SERVER * server_ptr, const CHAR * location)
+{
+    CHAR header[192];
+    UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                      "HTTP/1.0 302 Found\r\n"
+                                      "Location: %s\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n",
+                                      location);
+    if (header_len > sizeof(header))
+    {
+        header_len = sizeof(header);
+    }
+
+    http_send_data(server_ptr, header, header_len);
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+
+/* Simple helper to send a plain-text error response. */
+static UINT http_send_error(NX_HTTP_SERVER * server_ptr, const CHAR * msg)
+{
+    if (!msg)
+    {
+        msg = "Internal error\r\n";
+    }
+
+    CHAR header[192];
+    UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                      "HTTP/1.0 400 Bad Request\r\n"
+                                      "Content-Type: text/plain\r\n"
+                                      "Content-Length: %u\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n",
+                                      (unsigned) strlen(msg));
+    if (header_len > sizeof(header))
+    {
+        header_len = sizeof(header);
+    }
+
+    http_send_data(server_ptr, header, header_len);
+    http_send_data(server_ptr, msg, (UINT) strlen(msg));
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+
+/* URL decode helper ------------------------------------------------------- */
+
+static int hex_nibble(CHAR c)
+{
+    if ((c >= '0') && (c <= '9'))
+    {
+        return (int) (c - '0');
+    }
+    if ((c >= 'A') && (c <= 'F'))
+    {
+        return (int) (c - 'A' + 10);
+    }
+    if ((c >= 'a') && (c <= 'f'))
+    {
+        return (int) (c - 'a' + 10);
+    }
+    return -1;
+}
+
+static void url_decode(const CHAR * src, CHAR * dst, UINT dst_size)
+{
+    UINT di = 0u;
+    UINT si = 0u;
+
+    if (dst_size == 0u)
+    {
+        return;
+    }
+
+    while ((src[si] != '\0') && (di < (dst_size - 1u)))
+    {
+        if (src[si] == '%')
+        {
+            int hi = hex_nibble(src[si + 1u]);
+            int lo = hex_nibble(src[si + 2u]);
+            if ((hi >= 0) && (lo >= 0))
+            {
+                dst[di++] = (CHAR) ((hi << 4) | lo);
+                si += 3u;
+                continue;
+            }
+        }
+        else if (src[si] == '+')
+        {
+            dst[di++] = ' ';
+            si++;
+            continue;
+        }
+
+        dst[di++] = src[si++];
+    }
+
+    dst[di] = '\0';
+}
+
+/* Human readable size string (no floats, just bytes or KB) --------------- */
+
+static CHAR * format_size(ULONG bytes, CHAR * buffer, size_t buffer_size)
+{
+    if (bytes < 1024UL)
+    {
+        (void) snprintf(buffer, buffer_size, "%lu B", bytes);
+    }
+    else if (bytes < (1024UL * 1024UL))
+    {
+        ULONG kb = bytes / 1024UL;
+        (void) snprintf(buffer, buffer_size, "%lu KB", kb);
+    }
+    else
+    {
+        ULONG mb = bytes / (1024UL * 1024UL);
+        (void) snprintf(buffer, buffer_size, "%lu MB", mb);
+    }
+    return buffer;
+}
+
+/* Serve static icon file from USB (/rsc/...) ----------------------------- */
+
+static UINT http_send_static_file(NX_HTTP_SERVER * server_ptr, const CHAR * path_on_usb)
+{
+    if (g_usb_media == FX_NULL)
+    {
+        return http_send_error(server_ptr, "USB not mounted\r\n");
+    }
+
+    UINT    fx_status;
+    FX_FILE file;
+
+    fx_status = fx_file_open(g_usb_media, &file, (CHAR *) path_on_usb, FX_OPEN_FOR_READ);
+    if (fx_status != FX_SUCCESS)
+    {
+        return http_send_error(server_ptr, "Static file not found\r\n");
+    }
+
+    const CHAR * content_type = "application/octet-stream";
+    const CHAR * ext          = strrchr(path_on_usb, '.');
+    if (ext)
+    {
+        if (strcmp(ext, ".png") == 0)
+        {
+            content_type = "image/png";
+        }
+        else if ((strcmp(ext, ".jpg") == 0) || (strcmp(ext, ".jpeg") == 0))
+        {
+            content_type = "image/jpeg";
+        }
+        else if (strcmp(ext, ".gif") == 0)
+        {
+            content_type = "image/gif";
+        }
+        else if ((strcmp(ext, ".html") == 0) || (strcmp(ext, ".htm") == 0))
+        {
+            content_type = "text/html";
+        }
+        else if (strcmp(ext, ".js") == 0)
+        {
+            content_type = "application/javascript";
+        }
+        else if (strcmp(ext, ".css") == 0)
+        {
+            content_type = "text/css";
+        }
+    }
+
+    UINT header_len = (UINT) snprintf(g_header_buf, sizeof(g_header_buf),
+                                      "HTTP/1.0 200 OK\r\n"
+                                      "Content-Type: %s\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n",
+                                      content_type);
+    if (header_len > sizeof(g_header_buf))
+    {
+        header_len = sizeof(g_header_buf);
+    }
+
+    http_send_data(server_ptr, g_header_buf, header_len);
+
+    UCHAR buffer[512];
+    ULONG actual = 0u;
+
+    do
+    {
+        fx_status = fx_file_read(&file, buffer, sizeof(buffer), &actual);
+        if ((fx_status != FX_SUCCESS) && (fx_status != FX_END_OF_FILE))
+        {
+            break;
+        }
+
+        if (actual > 0u)
+        {
+            http_send_data(server_ptr, (CHAR *) buffer, (UINT) actual);
+        }
+    } while (fx_status != FX_END_OF_FILE);
+
+    fx_file_close(&file);
+
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+/* File download ---------------------------------------------------------- */
+
+static UINT http_send_file_download(NX_HTTP_SERVER * server_ptr, const CHAR * file_path)
+{
+    if (g_usb_media == FX_NULL)
+    {
+        return http_send_error(server_ptr, "USB not mounted\r\n");
+    }
+
+    UINT    fx_status;
+    FX_FILE file;
+
+    fx_status = fx_file_open(g_usb_media, &file, (CHAR *) file_path, FX_OPEN_FOR_READ);
+    if (fx_status != FX_SUCCESS)
+    {
+        return http_send_error(server_ptr, "File not found\r\n");
+    }
+
+    const CHAR * name = strrchr(file_path, '/');
+    if (name)
+    {
+        name++;
+    }
+    else
+    {
+        name = file_path;
+    }
+
+    UINT header_len = (UINT) snprintf(g_header_buf, sizeof(g_header_buf),
+                                      "HTTP/1.0 200 OK\r\n"
+                                      "Content-Type: application/octet-stream\r\n"
+                                      "Content-Disposition: attachment; filename=\"%s\"\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n",
+                                      name);
+    if (header_len > sizeof(g_header_buf))
+    {
+        header_len = sizeof(g_header_buf);
+    }
+
+    http_send_data(server_ptr, g_header_buf, header_len);
+
+    UCHAR buffer[512];
+    ULONG actual = 0u;
+
+    do
+    {
+        fx_status = fx_file_read(&file, buffer, sizeof(buffer), &actual);
+        if ((fx_status != FX_SUCCESS) && (fx_status != FX_END_OF_FILE))
+        {
+            break;
+        }
+
+        if (actual > 0u)
+        {
+            http_send_data(server_ptr, (CHAR *) buffer, (UINT) actual);
+        }
+    } while (fx_status != FX_END_OF_FILE);
+
+    fx_file_close(&file);
+
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+/* Directory listing + UI ------------------------------------------------- */
+
+static UINT http_send_directory_listing(NX_HTTP_SERVER * server_ptr, const CHAR * path)
+{
+    if (g_usb_media == FX_NULL)
+    {
+        return http_send_error(server_ptr, "USB not mounted\r\n");
+    }
+
+    UINT  status;
+    UINT  attributes = 0;
+    ULONG size       = 0;
+
+    /* Normalize current path */
+    if (path && path[0] != '\0')
+    {
+        strncpy(g_current_path, path, MAX_PATH_LEN);
+        g_current_path[MAX_PATH_LEN] = '\0';
+    }
+    else
+    {
+        g_current_path[0] = '\0';
+    }
+
+    if (g_current_path[0] == '\0')
+    {
+        fx_directory_default_set(g_usb_media, FX_NULL);
+    }
+    else
+    {
+        fx_directory_default_set(g_usb_media, g_current_path);
+    }
+
+    /* Breadcrumb + parent path */
+    g_parent_path[0] = '\0';
+    if (g_current_path[0] == '\0')
+    {
+        snprintf(g_breadcrumb, sizeof(g_breadcrumb), "/");
+    }
+    else
+    {
+        snprintf(g_breadcrumb, sizeof(g_breadcrumb), "/%s", g_current_path);
+
+        strncpy(g_parent_path, g_current_path, sizeof(g_parent_path) - 1u);
+        g_parent_path[sizeof(g_parent_path) - 1u] = '\0';
+        CHAR * last_slash = strrchr(g_parent_path, '/');
+        if (last_slash)
+        {
+            *last_slash = '\0';
+        }
+        else
+        {
+            g_parent_path[0] = '\0';
+        }
+    }
+
+    /* HTTP header */
+    UINT header_len = (UINT) snprintf(g_header_buf, sizeof(g_header_buf),
+                                      "HTTP/1.0 200 OK\r\n"
+                                      "Content-Type: text/html\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n");
+    if (header_len > sizeof(g_header_buf))
+    {
+        header_len = sizeof(g_header_buf);
+    }
+    if (http_send_data(server_ptr, g_header_buf, header_len) != NX_SUCCESS)
+    {
+        fx_directory_default_set(g_usb_media, FX_NULL);
+        return NX_HTTP_CALLBACK_COMPLETED;
+    }
+
+    /* HTML START + CSS */
+    static const CHAR html_start[] =
+        "<!DOCTYPE html>\r\n"
+        "<html>\r\n"
+        "<head>\r\n"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\r\n"
+        "<title>USB File Browser</title>\r\n"
+        "<style>\r\n"
+        "body{font-family:sans-serif;background:#f4f4f9;color:#333;margin:0;padding:20px;}\r\n"
+        ".container{max-width:900px;margin:0 auto;background:#fff;padding:20px;border-radius:8px;"
+            "box-shadow:0 2px 4px rgba(0,0,0,0.1);}\r\n"
+        "h1{color:#0056b3;border-bottom:2px solid #0056b3;padding-bottom:10px;margin-bottom:10px;}\r\n"
+        ".breadcrumb{font-size:0.9em;color:#666;margin-bottom:16px;}\r\n"
+        "ul{list-style:none;padding:0;margin:0;}\r\n"
+        "li{display:flex;align-items:center;padding:8px 0;border-bottom:1px dashed #eee;"
+            "transition:background-color 0.2s;}\r\n"
+        "li:hover{background-color:#f9f9ff;}\r\n"
+        ".name-col{display:flex;align-items:center;gap:8px;min-width:200px;}\r\n"
+        ".icon{width:24px;height:24px;}\r\n"
+        "a{text-decoration:none;color:#007bff;font-weight:500;}\r\n"
+        ".size{color:#6c757d;font-size:0.9em;margin-left:auto;}\r\n"
+        ".section-title{margin-top:16px;font-size:0.9em;text-transform:uppercase;"
+            "letter-spacing:0.08em;color:#888;}\r\n"
+        ".upload{margin:8px 0 16px 0;display:flex;align-items:center;gap:8px;}\r\n"
+        ".upload-status{font-size:0.85em;color:#555;}\r\n"
+        "button{padding:6px 12px;border-radius:4px;border:1px solid #007bff;"
+            "background:#007bff;color:#fff;cursor:pointer;}\r\n"
+        "button:hover{background:#0056b3;}\r\n"
+        "</style>\r\n"
+        "</head>\r\n"
+        "<body>\r\n"
+        "<div class=\"container\">\r\n"
+        "<h1>Files on USB</h1>\r\n";
+
+    if (http_send_data(server_ptr, html_start, (UINT) strlen(html_start)) != NX_SUCCESS)
+    {
+        fx_directory_default_set(g_usb_media, FX_NULL);
+        return NX_HTTP_CALLBACK_COMPLETED;
+    }
+
+    /* JS current path */
+    snprintf(g_tmp_buf, sizeof(g_tmp_buf),
+             "<script>const CURRENT_PATH=\"%s\";</script>\r\n",
+             g_current_path);
+    (void) http_send_data(server_ptr, g_tmp_buf, (UINT) strlen(g_tmp_buf));
+
+    /* Breadcrumb UI */
+    snprintf(g_tmp_buf, sizeof(g_tmp_buf),
+             "<div class=\"breadcrumb\">Path: %s</div>\r\n",
+             g_breadcrumb);
+    (void) http_send_data(server_ptr, g_tmp_buf, (UINT) strlen(g_tmp_buf));
+
+    /* Show login status */
+    if (g_logged_in)
+    {
+        snprintf(g_tmp_buf, sizeof(g_tmp_buf),
+                 "<div class=\"breadcrumb\">Logged in as <strong>%s</strong> "
+                 "[<a href=\"/logout\">Logout</a>]</div>\r\n",
+                 ADMIN_USERNAME);
+    }
+    else
+    {
+        snprintf(g_tmp_buf, sizeof(g_tmp_buf),
+                 "<div class=\"breadcrumb\">Not logged in. "
+                 "Uploads are disabled. "
+                 "<a href=\"/login\">Login</a></div>\r\n");
+    }
+    (void) http_send_data(server_ptr, g_tmp_buf, (UINT) strlen(g_tmp_buf));
+
+    if (g_current_path[0] == '\0')
+    {
+        snprintf(g_tmp_buf, sizeof(g_tmp_buf),
+                 "<div class=\"breadcrumb\"><strong>Current: root</strong></div>\r\n");
+    }
+    else if (g_parent_path[0] == '\0')
+    {
+        snprintf(g_tmp_buf, sizeof(g_tmp_buf),
+                 "<div class=\"breadcrumb\"><a href=\"/\">⬆ Up to /</a></div>\r\n");
+    }
+    else
+    {
+        snprintf(g_tmp_buf, sizeof(g_tmp_buf),
+                 "<div class=\"breadcrumb\"><a href=\"/%s\">⬆ Up to /%s</a></div>\r\n",
+                 g_parent_path, g_parent_path);
+    }
+    (void) http_send_data(server_ptr, g_tmp_buf, (UINT) strlen(g_tmp_buf));
+
+    if( g_logged_in )
+    {
+    /* Upload UI + JS (chunked) */
+    static const CHAR upload_ui[] =
+        "<div class=\"section-title\">Upload</div>\r\n"
+        "<div class=\"upload\">"
+        "<input type=\"file\" id=\"fileInput\">"
+        "<button type=\"button\" onclick=\"uploadFileChunked()\">Upload</button>"
+        "<span id=\"uploadStatus\" class=\"upload-status\"></span>"
+        "</div>\r\n"
+        "<script>\r\n"
+        "const CHUNK_SIZE=1024;\r\n"
+        "const MAX_NAME_CHARS=14;\r\n"
+        "function shortenName(name,maxLen){\r\n"
+        "  if(name.length<=maxLen){return name;}\r\n"
+        "  const dot=name.lastIndexOf('.');\r\n"
+        "  if(dot<=0){return name.substring(0,maxLen);}\r\n"
+        "  const ext=name.substring(dot);\r\n"
+        "  const baseMax=maxLen-ext.length;\r\n"
+        "  if(baseMax<=0){return name.substring(0,maxLen);}\r\n"
+        "  return name.substring(0,baseMax)+ext;\r\n"
+        "}\r\n"
+        "async function uploadFileChunked(){\r\n"
+        " const input=document.getElementById('fileInput');\r\n"
+        " const status=document.getElementById('uploadStatus');\r\n"
+        " if(!input.files||!input.files.length){status.textContent='Choose a file';return;}\r\n"
+        " const file=input.files[0];\r\n"
+        " const total=file.size;\r\n"
+        " const path=(typeof CURRENT_PATH!=='undefined'&&CURRENT_PATH)?CURRENT_PATH:\"\";\r\n"
+        " const safeName=shortenName(file.name,MAX_NAME_CHARS);\r\n"
+        " const encodedName=encodeURIComponent(safeName);  // <<< IMPORTANT >>>\r\n"
+        " let offset=0; let chunkIndex=0;\r\n"
+        " try{\r\n"
+        "  while(offset<total){\r\n"
+        "   const end=Math.min(offset+CHUNK_SIZE,total);\r\n"
+        "   const chunk=file.slice(offset,end);\r\n"
+        "   const eof=(end>=total)?1:0;\r\n"
+        "   let url='/upload-chunk/'+offset+'/'+eof;\r\n"
+        "   if(path&&path.length>0){url+='/'+path;}\r\n"
+        "   url+='/'+encodedName;                    // <<< USE encodedName >>>\r\n"
+        "   const MAX_URL_LEN=54;\r\n"
+        "   if(url.length>MAX_URL_LEN){\r\n"
+        "    status.textContent='Upload failed: resulting file name too long.';\r\n"
+        "    return;\r\n"
+        "   }\r\n"
+        "   status.textContent='Uploading chunk '+chunkIndex+' (offset '+offset+')...';\r\n"
+        "   const resp=await fetch(url,{method:'POST',body:chunk});\r\n"
+        "   const text=await resp.text();\r\n"
+        "   if(!resp.ok){throw new Error(text||'Upload failed');}\r\n"
+        "   console.log('Chunk response:',text);\r\n"
+        "   offset=end; chunkIndex++;\r\n"
+        "  }\r\n"
+        "  status.textContent='Upload complete';\r\n"
+        "  setTimeout(()=>{location.reload();},1000);\r\n"
+        " }catch(e){console.error(e);status.textContent='Upload failed: '+e.message;}\r\n"
+        "}\r\n"
+        "</script>\r\n";
+
+    (void) http_send_data(server_ptr, upload_ui, (UINT) strlen(upload_ui));
+    }
+    else
+    {
+        /* When not logged in, we don’t show the upload form at all. */
+    }
+
+    /* ------------- FOLDERS ------------- */
+    static const CHAR folders_title[] =
+        "<div class=\"section-title\">Folders</div>\r\n"
+        "<ul>\r\n";
+    if (http_send_data(server_ptr, folders_title, (UINT) strlen(folders_title)) != NX_SUCCESS)
+    {
+        fx_directory_default_set(g_usb_media, FX_NULL);
+        return NX_HTTP_CALLBACK_COMPLETED;
+    }
+
+    status = fx_directory_first_entry_find(g_usb_media, g_entry_name);
+    while (status == FX_SUCCESS)
+    {
+        if ((g_entry_name[0] != 0) &&
+            (strcmp(g_entry_name, ".") != 0) &&
+            (strcmp(g_entry_name, "..") != 0))
+        {
+            attributes = 0u;
+            size       = 0u;
+
+            fx_directory_information_get(g_usb_media,
+                                         g_entry_name,
+                                         &attributes,
+                                         &size,
+                                         FX_NULL, FX_NULL, FX_NULL,
+                                         FX_NULL, FX_NULL, FX_NULL);
+
+            if (attributes & FX_DIRECTORY)
+            {
+                strncpy(g_short_name, g_entry_name, sizeof(g_short_name) - 1u);
+                g_short_name[sizeof(g_short_name) - 1u] = '\0';
+
+                CHAR child_path[MAX_PATH_LEN + 1];
+                if (g_current_path[0] == '\0')
+                {
+                    snprintf(child_path, sizeof(child_path), "%s", g_short_name);
+                }
+                else
+                {
+                    snprintf(child_path, sizeof(child_path), "%s/%s", g_current_path, g_short_name);
+                }
+
+                snprintf(g_line_buf, sizeof(g_line_buf),
+                         "<li>"
+                         "<div class=\"name-col\">"
+                         "<img class=\"icon\" src=\"%s\" alt=\"DIR\">"
+                         "<a href=\"/%s\">%s</a>"
+                         "</div>"
+                         "<span class=\"size\">[Directory]</span>"
+                         "</li>\r\n",
+                         FOLDER_ICON_PATH,
+                         child_path,
+                         g_short_name);
+
+                if (http_send_data(server_ptr, g_line_buf, (UINT) strlen(g_line_buf)) != NX_SUCCESS)
+                {
+                    fx_directory_default_set(g_usb_media, FX_NULL);
+                    return NX_HTTP_CALLBACK_COMPLETED;
+                }
+            }
+        }
+
+        status = fx_directory_next_entry_find(g_usb_media, g_entry_name);
+    }
+
+    static const CHAR end_folders[] = "</ul>\r\n";
+    (void) http_send_data(server_ptr, end_folders, (UINT) strlen(end_folders));
+
+    /* ------------- FILES ------------- */
+    static const CHAR files_title[] =
+        "<div class=\"section-title\">Files</div>\r\n"
+        "<ul>\r\n";
+    if (http_send_data(server_ptr, files_title, (UINT) strlen(files_title)) != NX_SUCCESS)
+    {
+        fx_directory_default_set(g_usb_media, FX_NULL);
+        return NX_HTTP_CALLBACK_COMPLETED;
+    }
+
+    status = fx_directory_first_entry_find(g_usb_media, g_entry_name);
+    while (status == FX_SUCCESS)
+    {
+        if ((g_entry_name[0] != 0) &&
+            (strcmp(g_entry_name, ".") != 0) &&
+            (strcmp(g_entry_name, "..") != 0))
+        {
+            attributes = 0u;
+            size       = 0u;
+
+            fx_directory_information_get(g_usb_media,
+                                         g_entry_name,
+                                         &attributes,
+                                         &size,
+                                         FX_NULL, FX_NULL, FX_NULL,
+                                         FX_NULL, FX_NULL, FX_NULL);
+
+            if (!(attributes & FX_DIRECTORY))
+            {
+                strncpy(g_short_name, g_entry_name, sizeof(g_short_name) - 1u);
+                g_short_name[sizeof(g_short_name) - 1u] = '\0';
+
+                CHAR file_path[MAX_PATH_LEN + 1];
+                if (g_current_path[0] == '\0')
+                {
+                    snprintf(file_path, sizeof(file_path), "%s", g_short_name);
+                }
+                else
+                {
+                    snprintf(file_path, sizeof(file_path), "%s/%s", g_current_path, g_short_name);
+                }
+
+                format_size(size, g_size_buf, sizeof(g_size_buf));
+
+                snprintf(g_line_buf, sizeof(g_line_buf),
+                         "<li>"
+                         "<div class=\"name-col\">"
+                         "<img class=\"icon\" src=\"%s\" alt=\"FILE\">"
+                         "<a href=\"/download/%s\">%s</a>"
+                         "</div>"
+                         "<span class=\"size\">%s</span>"
+                         "</li>\r\n",
+                         FILE_ICON_PATH,
+                         file_path,
+                         g_short_name,
+                         g_size_buf);
+
+                if (http_send_data(server_ptr, g_line_buf, (UINT) strlen(g_line_buf)) != NX_SUCCESS)
+                {
+                    fx_directory_default_set(g_usb_media, FX_NULL);
+                    return NX_HTTP_CALLBACK_COMPLETED;
+                }
+            }
+        }
+
+        status = fx_directory_next_entry_find(g_usb_media, g_entry_name);
+    }
+
+    static const CHAR html_end[] =
+        "</ul>\r\n"
+        "</div>\r\n"
+        "</body>\r\n"
+        "</html>\r\n";
+
+    (void) http_send_data(server_ptr, html_end, (UINT) strlen(html_end));
+
+    fx_directory_default_set(g_usb_media, FX_NULL);
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+/* Chunked upload handler -------------------------------------------------- */
+static UINT http_handle_upload_chunk(NX_HTTP_SERVER * server_ptr,
+                                     CHAR           * resource,
+                                     NX_PACKET      * packet_ptr)
+{
+    if ((g_usb_media == FX_NULL) || (g_usb_media->fx_media_id != FX_MEDIA_ID))
+    {
+        return http_send_error(server_ptr, "USB not mounted\r\n");
+    }
+
+    UINT  fx_status;
+    UINT  http_status;
+    ULONG bytes_written = 0;
+
+    /* --- 0) Check prefix ------------------------------------------------ */
+    const CHAR prefix[] = "/upload-chunk";
+    UINT       prefix_len = (UINT) strlen(prefix);
+
+    if (strncmp(resource, prefix, prefix_len) != 0)
+    {
+        return http_send_error(server_ptr, "UploadChunk failed (stage 0: bad URL)\r\n");
+    }
+
+    const CHAR * p = resource + prefix_len;   /* points to "" or "/..." */
+
+    if (*p == '/')
+    {
+        p++;   /* skip leading '/' */
+    }
+
+    if (*p == '\0')
+    {
+        return http_send_error(server_ptr, "UploadChunk failed (stage 0: missing offset)\r\n");
+    }
+
+    /* --- 1) Extract offset ---------------------------------------------- */
+    CHAR        offset_str[16];
+    const CHAR * offset_start = p;
+    const CHAR * slash1       = strchr(offset_start, '/');
+    if (!slash1)
+    {
+        return http_send_error(server_ptr, "UploadChunk failed (stage 1: missing eof)\r\n");
+    }
+    size_t offset_len = (size_t) (slash1 - offset_start);
+    if (offset_len >= sizeof(offset_str))
+    {
+        offset_len = sizeof(offset_str) - 1u;
+    }
+    memcpy(offset_str, offset_start, offset_len);
+    offset_str[offset_len] = '\0';
+
+    ULONG offset = strtoul(offset_str, NX_NULL, 10);
+
+    /* --- 2) Extract eof flag -------------------------------------------- */
+    const CHAR * eof_start = slash1 + 1;
+    const CHAR * slash2    = strchr(eof_start, '/');
+    if (!slash2)
+    {
+        return http_send_error(server_ptr, "UploadChunk failed (stage 1: missing path/filename)\r\n");
+    }
+
+    CHAR   eof_str[8];
+    size_t eof_len = (size_t) (slash2 - eof_start);
+    if (eof_len >= sizeof(eof_str))
+    {
+        eof_len = sizeof(eof_str) - 1u;
+    }
+    memcpy(eof_str, eof_start, eof_len);
+    eof_str[eof_len] = '\0';
+
+    UINT eof = (UINT) strtoul(eof_str, NX_NULL, 10);
+
+    /* --- 3) Remaining = path + filename or just filename ---------------- */
+    const CHAR * rest = slash2 + 1;
+    if (*rest == '\0')
+    {
+        return http_send_error(server_ptr, "UploadChunk failed (stage 1: missing name)\r\n");
+    }
+
+    CHAR path [MAX_PATH_LEN   + 1];
+    CHAR name [MAX_NAME_CHARS + 1];
+
+    const CHAR * last_slash = strrchr(rest, '/');
+    if (last_slash)
+    {
+        /* path part */
+        size_t path_len = (size_t) (last_slash - rest);
+        if (path_len > MAX_PATH_LEN)
+        {
+            path_len = MAX_PATH_LEN;
+        }
+        memcpy(path, rest, path_len);
+        path[path_len] = '\0';
+
+        /* filename (URL-decoded) */
+        url_decode(last_slash + 1, name, sizeof(name));
+    }
+    else
+    {
+        path[0] = '\0';
+        url_decode(rest, name, sizeof(name));
+    }
+
+    if (name[0] == '\0')
+    {
+        return http_send_error(server_ptr, "UploadChunk failed (stage 1: empty name)\r\n");
+    }
+
+    /* --- 4) Select target directory ------------------------------------- */
+    if (path[0] == '\0')
+    {
+        fx_status = fx_directory_default_set(g_usb_media, FX_NULL);   /* root */
+    }
+    else
+    {
+        fx_status = fx_directory_default_set(g_usb_media, path);
+    }
+
+    if (fx_status != FX_SUCCESS)
+    {
+        CHAR msg[160];
+        snprintf(msg, sizeof(msg),
+                 "UploadChunk failed (stage 2: bad path \"%s\", fx=0x%04X)\r\n",
+                 path, fx_status);
+        return http_send_error(server_ptr, msg);
+    }
+
+    /* On first chunk (offset == 0) create/truncate the file. */
+    if (offset == 0u)
+    {
+        fx_status = fx_file_create(g_usb_media, name);
+        if (fx_status == FX_ALREADY_CREATED)
+        {
+            (void) fx_file_delete(g_usb_media, name);
+            fx_status = fx_file_create(g_usb_media, name);
+        }
+
+        if (fx_status != FX_SUCCESS)
+        {
+            fx_directory_default_set(g_usb_media, FX_NULL);
+            CHAR msg[160];
+            snprintf(msg, sizeof(msg),
+                     "UploadChunk failed (stage 3: create \"%s\", fx=0x%04X)\r\n",
+                     name, fx_status);
+            return http_send_error(server_ptr, msg);
+        }
+    }
+
+    /* --- 5) Open and seek to offset ------------------------------------- */
+    FX_FILE file;
+    fx_status = fx_file_open(g_usb_media, &file, name, FX_OPEN_FOR_WRITE);
+    if (fx_status != FX_SUCCESS)
+    {
+        fx_directory_default_set(g_usb_media, FX_NULL);
+        CHAR msg[160];
+        snprintf(msg, sizeof(msg),
+                 "UploadChunk failed (stage 4: open \"%s\", fx=0x%04X)\r\n",
+                 name, fx_status);
+        return http_send_error(server_ptr, msg);
+    }
+
+    fx_status = fx_file_seek(&file, offset);
+    if (fx_status != FX_SUCCESS)
+    {
+        fx_file_close(&file);
+        fx_directory_default_set(g_usb_media, FX_NULL);
+        CHAR msg[160];
+        snprintf(msg, sizeof(msg),
+                 "UploadChunk failed (stage 4: seek %lu, fx=0x%04X)\r\n",
+                 offset, fx_status);
+        return http_send_error(server_ptr, msg);
+    }
+
+    /* --- 6) Read ONLY the POST body using NetX HTTP API ----------------- */
+    ULONG content_length = 0;
+    http_status = nx_http_server_content_length_get_extended(packet_ptr, &content_length);
+    if (http_status != NX_SUCCESS)
+    {
+        fx_file_close(&file);
+        fx_directory_default_set(g_usb_media, FX_NULL);
+        return http_send_error(server_ptr, "UploadChunk failed (stage 5: no content-length)\r\n");
+    }
+
+    if ((content_length == 0u) || (content_length > HTTP_UPLOAD_CHUNK_MAX_SIZE))
+    {
+        fx_file_close(&file);
+        fx_directory_default_set(g_usb_media, FX_NULL);
+        return http_send_error(server_ptr, "UploadChunk failed (stage 5: bad content length)\r\n");
+    }
+
+    UCHAR buffer[HTTP_UPLOAD_BUFFER_SIZE];
+    ULONG body_offset   = 0;
+    bytes_written       = 0;
+
+    while (body_offset < content_length)
+    {
+        ULONG remaining = content_length - body_offset;
+        ULONG want      = (remaining > HTTP_UPLOAD_BUFFER_SIZE)
+                          ? HTTP_UPLOAD_BUFFER_SIZE
+                          : remaining;
+
+        UINT actual = 0u;
+        http_status = nx_http_server_content_get_extended(server_ptr,
+                                                          packet_ptr,
+                                                          body_offset,
+                                                          (CHAR *) buffer,
+                                                          want,
+                                                          &actual);
+        if ((http_status != NX_SUCCESS) && (http_status != NX_HTTP_DATA_END))
+        {
+            fx_file_close(&file);
+            fx_directory_default_set(g_usb_media, FX_NULL);
+            return http_send_error(server_ptr, "UploadChunk failed (stage 5: read error)\r\n");
+        }
+
+        if (actual == 0u)
+        {
+            break;
+        }
+
+        fx_status = fx_file_write(&file, buffer, actual);
+        if (fx_status != FX_SUCCESS)
+        {
+            fx_file_close(&file);
+            fx_directory_default_set(g_usb_media, FX_NULL);
+            return http_send_error(server_ptr, "UploadChunk failed (stage 5: write error)\r\n");
+        }
+
+        body_offset   += actual;
+        bytes_written += actual;
+
+        if (http_status == NX_HTTP_DATA_END)
+        {
+            break;
+        }
+    }
+
+    fx_file_close(&file);
+    fx_media_flush(g_usb_media);
+    fx_directory_default_set(g_usb_media, FX_NULL);
+
+    /* --- 7) Send tiny OK response --------------------------------------- */
+    CHAR body[128];
+    UINT body_len = (UINT) snprintf(body, sizeof(body),
+                                    "Chunk OK (offset=%lu, len=%lu, eof=%u)\r\n",
+                                    offset, bytes_written, eof);
+
+    CHAR resp_header[160];
+    UINT resp_header_len = (UINT) snprintf(resp_header, sizeof(resp_header),
+                                           "HTTP/1.0 200 OK\r\n"
+                                           "Content-Type: text/plain\r\n"
+                                           "Content-Length: %u\r\n"
+                                           "Connection: close\r\n"
+                                           "\r\n",
+                                           body_len);
+
+    http_send_data(server_ptr, resp_header, resp_header_len);
+    http_send_data(server_ptr, body, body_len);
+
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+/* Walk a URL-style path ("/", "/UI/", "/UI/rsc/emptyfolder/") and
+ * set the FileX default directory accordingly by stepping through
+ * each component with fx_directory_default_set().
+ *
+ * Returns NX_SUCCESS on success, or the FileX status if any step fails.
+ */
+static UINT filex_set_directory_from_url_path(const CHAR * url_path)
+{
+    CHAR decoded[MAX_PATH_LEN + 1];
+    const CHAR * p;
+    UINT status;
+
+    /* Decode %xx etc. */
+    url_decode(url_path ? url_path : "", decoded, sizeof(decoded));
+
+    /* Always start from root. */
+    status = fx_directory_default_set(g_usb_media, FX_NULL);
+    if (status != FX_SUCCESS)
+    {
+        return status;
+    }
+
+    p = decoded;
+
+    /* Empty or "/" means root – nothing more to do. */
+    if (p[0] == '\0' || (p[0] == '/' && p[1] == '\0'))
+    {
+        return NX_SUCCESS;
+    }
+
+    /* Skip leading slashes. */
+    while (*p == '/')
+    {
+        p++;
+    }
+
+    while (*p != '\0')
+    {
+        CHAR segment[FX_MAX_LONG_NAME_LEN + 1];
+        UINT seg_len = 0;
+
+        /* Collect the next path component until '/' or end. */
+        while ((*p != '\0') && (*p != '/') && (seg_len < FX_MAX_LONG_NAME_LEN))
+        {
+            segment[seg_len++] = *p++;
+        }
+        segment[seg_len] = '\0';
+
+        if (seg_len > 0)
+        {
+            /* Go one level deeper (relative to current default dir). */
+            status = fx_directory_default_set(g_usb_media, segment);
+            if (status != FX_SUCCESS)
+            {
+                return status;
+            }
+        }
+
+        /* Skip one or more '/' between components. */
+        while (*p == '/')
+        {
+            p++;
+        }
+    }
+
+    return NX_SUCCESS;
+}
+
+/* Send JSON array describing the contents of a directory on USB.
+ * URL path examples:
+ *   "/"           -> root
+ *   "/UI/"        -> directory "UI" at root
+ *   "/UI/Logs"    -> "Logs" subfolder inside "UI"
+ */
+static UINT http_send_json_directory(NX_HTTP_SERVER * server_ptr, const CHAR * url_path)
+{
+    if ((g_usb_media == FX_NULL) || (g_usb_media->fx_media_id != FX_MEDIA_ID))
+    {
+        return http_send_error(server_ptr, "USB not mounted\r\n");
+    }
+
+    /* Set FileX default dir according to URL path. */
+    UINT fx_status = filex_set_directory_from_url_path(url_path);
+    if (fx_status != NX_SUCCESS)
+    {
+        return http_send_error(server_ptr, "Invalid path\r\n");
+    }
+
+    /* HTTP header for streamed JSON. */
+    CHAR header[128];
+    UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                      "HTTP/1.0 200 OK\r\n"
+                                      "Content-Type: application/json\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n");
+    if (header_len > sizeof(header))
+    {
+        header_len = sizeof(header);
+    }
+    http_send_data(server_ptr, header, header_len);
+
+    /* JSON array start. */
+    static const CHAR json_start[] = "[";
+    static const CHAR json_end[]   = "]\r\n";
+    http_send_data(server_ptr, json_start, (UINT) strlen(json_start));
+
+    CHAR  entry_name[FX_MAX_LONG_NAME_LEN + 1];
+    UINT  attributes = 0;
+    ULONG size       = 0;
+    UINT  first      = 1;
+
+    fx_status = fx_directory_first_entry_find(g_usb_media, entry_name);
+    while (fx_status == FX_SUCCESS)
+    {
+        if ((entry_name[0] != '\0') &&
+            (strcmp(entry_name, ".") != 0) &&
+            (strcmp(entry_name, "..") != 0) &&
+            (strcmp(entry_name, "System Volume Information") != 0))
+        {
+            attributes = 0;
+            size       = 0;
+
+            (void) fx_directory_information_get(g_usb_media,
+                                                entry_name,
+                                                &attributes,
+                                                &size,
+                                                FX_NULL, FX_NULL, FX_NULL,
+                                                FX_NULL, FX_NULL, FX_NULL);
+
+            const CHAR * type_str = (attributes & FX_DIRECTORY) ? "DIR" : "FILE";
+
+            /* JSON-safe name (very simple escaping). */
+            CHAR safe_name[FX_MAX_LONG_NAME_LEN + 1];
+            UINT i = 0;
+            for (; entry_name[i] != '\0' && i < (sizeof(safe_name) - 1); i++)
+            {
+                CHAR c = entry_name[i];
+                safe_name[i] = (c == '\"' || c == '\\') ? '_' : c;
+            }
+            safe_name[i] = '\0';
+
+            CHAR item_buf[256];
+            UINT item_len = (UINT) snprintf(item_buf, sizeof(item_buf),
+                                            "%s{\"name\":\"%s\",\"type\":\"%s\",\"size\":%lu}",
+                                            first ? "" : ",",
+                                            safe_name,
+                                            type_str,
+                                            (unsigned long) size);
+            if (item_len > sizeof(item_buf))
+            {
+                item_len = sizeof(item_buf);
+            }
+
+            http_send_data(server_ptr, item_buf, item_len);
+            first = 0;
+        }
+
+        fx_status = fx_directory_next_entry_find(g_usb_media, entry_name);
+    }
+
+    http_send_data(server_ptr, json_end, (UINT) strlen(json_end));
+
+    /* Go back to root for safety. */
+    (void) fx_directory_default_set(g_usb_media, FX_NULL);
+
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+
+
+
+/* Render a small login page (GET /login or failed login) */
+static UINT render_login_form(NX_HTTP_SERVER *server_ptr, const CHAR *message)
+{
+    /* ---------------- HTTP header ---------------- */
+    CHAR header[128];
+    UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                      "HTTP/1.0 200 OK\r\n"
+                                      "Content-Type: text/html\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n");
+    if (header_len > sizeof(header))
+    {
+        header_len = sizeof(header);
+    }
+    http_send_data(server_ptr, header, header_len);
+
+    /* ---------------- HTML body ------------------ */
+    const CHAR * msg = (message && message[0]) ? message : "";
+
+    /* Split in prefix + message + suffix to avoid a huge snprintf. */
+    static const CHAR body_prefix[] =
+        "<!DOCTYPE html>\r\n"
+        "<html><head><title>Login</title></head>\r\n"
+        "<body style=\"font-family:sans-serif;background:#f4f4f9;\">\r\n"
+        "<div style=\"max-width:400px;margin:40px auto;padding:20px;background:#fff;"
+        "border-radius:8px;box-shadow:0 2px 4px rgba(0,0,0,0.1);\">\r\n"
+        "<h2>Login</h2>\r\n"
+        "<p style=\"color:#c00;\">";
+
+    static const CHAR body_suffix[] =
+        "</p>\r\n"
+        "<form method=\"POST\" action=\"/login\">\r\n"
+        "  <div>Username:<br><input name=\"username\" style=\"width:100%%;\"></div>\r\n"
+        "  <div style=\"margin-top:8px;\">Password:<br>"
+        "      <input type=\"password\" name=\"password\" style=\"width:100%%;\"></div>\r\n"
+        "  <div style=\"margin-top:12px;\">"
+        "      <button type=\"submit\">Login</button>"
+        "      <a href=\"/\" style=\"margin-left:8px;\">Cancel</a>"
+        "  </div>\r\n"
+        "</form>\r\n"
+        "</div></body></html>\r\n";
+
+    http_send_data(server_ptr, body_prefix, (UINT)strlen(body_prefix));
+    http_send_data(server_ptr, msg, (UINT)strlen(msg));
+    http_send_data(server_ptr, body_suffix, (UINT)strlen(body_suffix));
+
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+
+/* Very small helper: extract value of key "username=" or "password=" from form body */
+/* Extract value of key "username=" or "password=" from form body. */
+static void form_get_value(const CHAR * body, const CHAR * key, CHAR * out, UINT out_size)
+{
+    const CHAR * p = strstr(body, key);
+    UINT i = 0;
+
+    if (!p || out_size == 0)
+    {
+        if (out_size > 0) { out[0] = '\0'; }
+        return;
+    }
+
+    p += strlen(key);  /* skip "username=" or "password=" */
+
+    while (*p && *p != '&' && i < (out_size - 1))
+    {
+        if (*p == '+')
+        {
+            out[i++] = ' ';
+        }
+        else
+        {
+            out[i++] = *p;
+        }
+        p++;
+    }
+    out[i] = '\0';
+}
+
+/* GET /api/auth_check : 200 if logged in, 401 otherwise. */
+static UINT http_handle_auth_check(NX_HTTP_SERVER * server_ptr)
+{
+    if (!g_logged_in)
+    {
+        static const CHAR body[] = "Unauthorized";
+        CHAR header[128];
+        UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                          "HTTP/1.0 401 Unauthorized\r\n"
+                                          "Content-Type: text/plain\r\n"
+                                          "Content-Length: %u\r\n"
+                                          "Connection: close\r\n"
+                                          "\r\n",
+                                          (unsigned) strlen(body));
+        if (header_len > sizeof(header))
+        {
+            header_len = sizeof(header);
+        }
+
+        http_send_data(server_ptr, header, header_len);
+        http_send_data(server_ptr, body, (UINT) strlen(body));
+        return NX_HTTP_CALLBACK_COMPLETED;
+    }
+    else
+    {
+        static const CHAR json[] = "{\"status\":\"ok\"}";
+        CHAR header[128];
+        UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                          "HTTP/1.0 200 OK\r\n"
+                                          "Content-Type: application/json\r\n"
+                                          "Content-Length: %u\r\n"
+                                          "Connection: close\r\n"
+                                          "\r\n",
+                                          (unsigned) strlen(json));
+        if (header_len > sizeof(header))
+        {
+            header_len = sizeof(header);
+        }
+
+        http_send_data(server_ptr, header, header_len);
+        http_send_data(server_ptr, json, (UINT) strlen(json));
+        return NX_HTTP_CALLBACK_COMPLETED;
+    }
+}
+
+/* POST /api/logout : clear login flag. */
+static UINT http_handle_logout(NX_HTTP_SERVER * server_ptr)
+{
+    g_logged_in = 0u;
+
+    static const CHAR json[] = "{\"status\":\"logged_out\"}";
+    CHAR header[128];
+    UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                      "HTTP/1.0 200 OK\r\n"
+                                      "Content-Type: application/json\r\n"
+                                      "Content-Length: %u\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n",
+                                      (unsigned) strlen(json));
+    if (header_len > sizeof(header))
+    {
+        header_len = sizeof(header);
+    }
+
+    http_send_data(server_ptr, header, header_len);
+    http_send_data(server_ptr, json, (UINT) strlen(json));
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+
+
+/* Handle POST /api/login */
+static UINT http_handle_login(NX_HTTP_SERVER * server_ptr, NX_PACKET * packet_ptr)
+{
+    ULONG content_length = 0;
+    UINT  status;
+
+    status = nx_http_server_content_length_get_extended(packet_ptr, &content_length);
+    if ((status != NX_SUCCESS) || (content_length == 0u) || (content_length > 256u))
+    {
+        /* Bad form data -> just go back to login page. */
+        return http_send_redirect(server_ptr, "/index.html");
+    }
+
+    CHAR body[257];
+    ULONG offset = 0;
+    ULONG total  = 0;
+
+    while ((offset < content_length) && (total < (sizeof(body) - 1u)))
+    {
+        ULONG to_read = content_length - offset;
+        if (to_read > (sizeof(body) - 1u - total))
+        {
+            to_read = sizeof(body) - 1u - total;
+        }
+
+        UINT actual = 0u;
+        status = nx_http_server_content_get_extended(server_ptr,
+                                                     packet_ptr,
+                                                     offset,
+                                                     &body[total],
+                                                     to_read,
+                                                     &actual);
+        if ((status != NX_SUCCESS) && (status != NX_HTTP_DATA_END))
+        {
+            return http_send_redirect(server_ptr, "/index.html");
+        }
+
+        if (actual == 0u)
+        {
+            break;
+        }
+
+        offset += actual;
+        total  += actual;
+
+        if (status == NX_HTTP_DATA_END)
+        {
+            break;
+        }
+    }
+
+    body[total] = '\0';
+
+    CHAR username[32];
+    CHAR password[32];
+
+    form_get_value(body, "username=", username, sizeof(username));
+    form_get_value(body, "password=", password, sizeof(password));
+
+    http_auth_ensure_init();
+
+    /* If no password provisioned yet (QSPI blank), allow default admin/admin once
+     * so the user can reach the app and set a new password.
+     * IMPORTANT: this path avoids QSPI reads if QSPI init failed.
+     */
+    if (g_auth_init_failed)
+    {
+        g_logged_in = 0u;
+        return http_send_redirect(server_ptr, "/index.html");
+    }
+
+    if (!auth_is_provisioned())
+    {
+        if ((strcmp(username, ADMIN_USERNAME) == 0) && (strcmp(password, ADMIN_PASSWORD) == 0))
+        {
+            g_logged_in = 1u;
+            return http_send_redirect(server_ptr, "/app.html");
+        }
+        g_logged_in = 0u;
+        return http_send_redirect(server_ptr, "/index.html");
+    }
+
+    /* Provisioned: verify against stored hash. */
+    if (auth_verify_credentials(username, password))
+    {
+        g_logged_in = 1u;
+        return http_send_redirect(server_ptr, "/app.html");
+    }
+
+    g_logged_in = 0u;
+    return http_send_redirect(server_ptr, "/index.html");
+
+}
+
+
+/* Send a file from USB as a download (binary stream). */
+static UINT http_handle_download(NX_HTTP_SERVER * server_ptr, const CHAR * url_file_param)
+{
+    if ((g_usb_media == FX_NULL) || (g_usb_media->fx_media_id != FX_MEDIA_ID))
+    {
+        return http_send_error(server_ptr, "USB not mounted\r\n");
+    }
+
+    /* Decode URL-encoded path, strip leading '/' for FileX. */
+    CHAR decoded[MAX_PATH_LEN + 1];
+    CHAR fx_path[MAX_PATH_LEN + 1];
+
+    url_decode(url_file_param, decoded, sizeof(decoded));
+
+    const CHAR * src = decoded;
+    if (*src == '/')
+    {
+        src++;
+    }
+
+    /* Copy into fx_path with length limit. */
+    UINT len = 0;
+    while ((len < MAX_PATH_LEN) && (src[len] != '\0'))
+    {
+        fx_path[len] = src[len];
+        len++;
+    }
+    fx_path[len] = '\0';
+
+    if (fx_path[0] == '\0')
+    {
+        return http_send_error(server_ptr, "No file specified\r\n");
+    }
+
+    /* Open the file. */
+    FX_FILE file;
+    UINT fx_status = fx_file_open(g_usb_media, &file, fx_path, FX_OPEN_FOR_READ);
+    if (fx_status != FX_SUCCESS)
+    {
+        return http_send_error(server_ptr, "File open failed\r\n");
+    }
+
+    /* Build and send HTTP header (no Content-Length, streamed). */
+    CHAR header[256];
+    UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                      "HTTP/1.0 200 OK\r\n"
+                                      "Content-Type: application/octet-stream\r\n"
+                                      "Content-Disposition: attachment; filename=\"%s\"\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n",
+                                      fx_path);
+    if (header_len > sizeof(header))
+    {
+        header_len = sizeof(header);
+    }
+    http_send_data(server_ptr, header, header_len);
+
+    /* Stream file content. */
+    UCHAR buf[512];
+    ULONG actual = 0;
+
+    do
+    {
+        fx_status = fx_file_read(&file, buf, sizeof(buf), &actual);
+        if ((fx_status != FX_SUCCESS) && (fx_status != FX_END_OF_FILE))
+        {
+            break;
+        }
+
+        if (actual > 0)
+        {
+            http_send_data(server_ptr, (CHAR *) buf, (UINT) actual);
+        }
+
+    } while ((fx_status != FX_END_OF_FILE) && (actual > 0));
+
+    fx_file_close(&file);
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+/* Delete a file or (empty) directory on USB. */
+static UINT http_handle_delete(NX_HTTP_SERVER * server_ptr, const CHAR * url_path_param)
+{
+    if ((g_usb_media == FX_NULL) || (g_usb_media->fx_media_id != FX_MEDIA_ID))
+    {
+        return http_send_error(server_ptr, "USB not mounted\r\n");
+    }
+
+    CHAR decoded[MAX_PATH_LEN + 1];
+    CHAR cleaned[MAX_PATH_LEN + 1];
+    CHAR parent_url[MAX_PATH_LEN + 1];
+    CHAR name_only[FX_MAX_LONG_NAME_LEN + 1];
+
+    /* Decode URL path, e.g. "/UI/rsc/emptyfolder" or "/usb_test.txt" */
+    url_decode(url_path_param ? url_path_param : "", decoded, sizeof(decoded));
+
+    if (decoded[0] == '\0' || strcmp(decoded, "/") == 0)
+    {
+        return http_send_error(server_ptr, "No valid path specified\r\n");
+    }
+
+    /* Copy and strip a trailing '/' if present (but keep leading '/'). */
+    UINT len = 0;
+    while ((len < MAX_PATH_LEN) && (decoded[len] != '\0'))
+    {
+        cleaned[len] = decoded[len];
+        len++;
+    }
+    if (len > 1 && cleaned[len - 1] == '/')
+    {
+        len--;
+    }
+    cleaned[len] = '\0';
+
+    /* Split cleaned into parent_url + name_only. */
+    CHAR * last_slash = strrchr(cleaned, '/');
+    if (last_slash == NULL)
+    {
+        /* No slash at all: item directly under root, e.g. "usb_test.txt". */
+        strcpy(parent_url, "/");
+        strncpy(name_only, cleaned, FX_MAX_LONG_NAME_LEN);
+        name_only[FX_MAX_LONG_NAME_LEN] = '\0';
+    }
+    else if (last_slash == cleaned)
+    {
+        /* Path like "/usb_test.txt". */
+        strcpy(parent_url, "/");
+        strncpy(name_only, last_slash + 1, FX_MAX_LONG_NAME_LEN);
+        name_only[FX_MAX_LONG_NAME_LEN] = '\0';
+    }
+    else
+    {
+        /* Path like "/UI/emptyfolder" or "/UI/rsc/foo". */
+        size_t parent_len = (size_t)(last_slash - cleaned);
+        if (parent_len > MAX_PATH_LEN)
+        {
+            parent_len = MAX_PATH_LEN;
+        }
+        memcpy(parent_url, cleaned, parent_len);
+        parent_url[parent_len] = '\0';
+
+        strncpy(name_only, last_slash + 1, FX_MAX_LONG_NAME_LEN);
+        name_only[FX_MAX_LONG_NAME_LEN] = '\0';
+    }
+
+    if (name_only[0] == '\0')
+    {
+        return http_send_error(server_ptr, "Invalid name\r\n");
+    }
+
+    /* Get attributes (file vs directory) relative to parent. */
+    UINT  attributes = 0;
+    ULONG size       = 0;
+    UINT  fx_status;
+
+    /* Set default dir to parent. */
+    fx_status = filex_set_directory_from_url_path(parent_url);
+    if (fx_status != NX_SUCCESS)
+    {
+        return http_send_error(server_ptr, "Cannot change directory\r\n");
+    }
+
+    fx_status = fx_directory_information_get(g_usb_media,
+                                             name_only,
+                                             &attributes,
+                                             &size,
+                                             FX_NULL, FX_NULL, FX_NULL,
+                                             FX_NULL, FX_NULL, FX_NULL);
+    if (fx_status != FX_SUCCESS)
+    {
+        (void) fx_directory_default_set(g_usb_media, FX_NULL);
+        return http_send_error(server_ptr, "Path not found\r\n");
+    }
+
+    /* Delete either file or (empty) directory. */
+    if (attributes & FX_DIRECTORY)
+    {
+        fx_status = fx_directory_delete(g_usb_media, name_only);
+    }
+    else
+    {
+        fx_status = fx_file_delete(g_usb_media, name_only);
+    }
+
+    (void) fx_directory_default_set(g_usb_media, FX_NULL);
+
+    if (fx_status != FX_SUCCESS)
+    {
+        CHAR msg[64];
+        snprintf(msg, sizeof(msg), "Delete failed (0x%04X)\r\n", fx_status);
+        msg[sizeof(msg) - 1] = '\0';
+        return http_send_error(server_ptr, msg);
+    }
+
+    /* Success: 200 OK with small body. */
+    static const CHAR ok_body[] = "OK";
+    CHAR header[128];
+    UINT header_len = (UINT) snprintf(header, sizeof(header),
+                                      "HTTP/1.0 200 OK\r\n"
+                                      "Content-Type: text/plain\r\n"
+                                      "Content-Length: %u\r\n"
+                                      "Connection: close\r\n"
+                                      "\r\n",
+                                      (unsigned) strlen(ok_body));
+    if (header_len > sizeof(header))
+    {
+        header_len = sizeof(header);
+    }
+    http_send_data(server_ptr, header, header_len);
+    http_send_data(server_ptr, ok_body, (UINT) strlen(ok_body));
+
+    return NX_HTTP_CALLBACK_COMPLETED;
+}
+
+
+
+
+/* Main NetX HTTP callback ------------------------------------------------- */
+
+UINT http_request_notify(NX_HTTP_SERVER * server_ptr,
+                         UINT             request_type,
+                         CHAR           * resource,
+                         NX_PACKET      * packet_ptr)
+{
+    if (request_type == NX_HTTP_SERVER_GET_REQUEST)
+    {
+        /* --- API: auth_check --- */
+        if (strncmp(resource, "/api/auth_check", 15) == 0)
+        {
+            return http_handle_auth_check(server_ptr);
+        }
+
+        /* --- API: auth_status (configured?) --- */
+        if (strncmp(resource, "/api/auth_status", 15) == 0)
+        {
+            return http_handle_auth_status(server_ptr);
+        }
+
+        /* --- API: files listing --- */
+        if (strncmp(resource, "/api/files", 10) == 0)
+        {
+            if (!g_logged_in)
+            {
+                return http_handle_auth_check(server_ptr);
+            }
+
+            const CHAR * query = strchr(resource, '?');
+            CHAR path_param[MAX_PATH_LEN + 1];
+            path_param[0] = '\0';
+
+            if (query != NX_NULL)
+            {
+                const CHAR * p = strstr(query + 1, "path=");
+                if (p != NX_NULL)
+                {
+                    p += 5; /* skip "path=" */
+                    UINT i = 0;
+                    while (*p && *p != '&' && i < MAX_PATH_LEN)
+                    {
+                        path_param[i++] = *p++;
+                    }
+                    path_param[i] = '\0';
+                }
+            }
+
+            if (path_param[0] == '\0')
+            {
+                strcpy(path_param, "/");  /* default root */
+            }
+
+            return http_send_json_directory(server_ptr, path_param);
+        }
+
+
+        /* --- API: download --- */
+        if (strncmp(resource, "/api/download", 13) == 0)
+        {
+            if (!g_logged_in)
+            {
+                return http_handle_auth_check(server_ptr);
+            }
+
+            const CHAR * query = strchr(resource, '?');
+            CHAR file_param[MAX_PATH_LEN + 1];
+            file_param[0] = '\0';
+
+            if (query != NX_NULL)
+            {
+                const CHAR * p = strstr(query + 1, "file=");
+                if (p != NX_NULL)
+                {
+                    p += 5; /* skip "file=" */
+                    UINT i = 0;
+                    while (*p && *p != '&' && i < MAX_PATH_LEN)
+                    {
+                        file_param[i++] = *p++;
+                    }
+                    file_param[i] = '\0';
+                }
+            }
+
+            if (file_param[0] == '\0')
+            {
+                return http_send_error(server_ptr, "No file specified\r\n");
+            }
+
+            return http_handle_download(server_ptr, file_param);
+        }
+
+        /* ---- Serve frontend files from USB root ---- */
+
+        if ((strcmp(resource, "/index.html") == 0) ||
+            (strcmp(resource, "/index") == 0))
+        {
+            /* index.html located at USB root */
+            return http_send_static_file(server_ptr, "index.html");
+        }
+
+        if ((strcmp(resource, "/app.html") == 0) ||
+            (strcmp(resource, "/app") == 0))
+        {
+            /* app.html located at USB root */
+            return http_send_static_file(server_ptr, "app.html");
+        }
+
+        if (strcmp(resource, "/file_manager.js") == 0)
+        {
+            /* JS located at USB root */
+            return http_send_static_file(server_ptr, "file_manager.js");
+        }
+
+        /* ---- Existing routes follow ---- */
+        if (strncmp(resource, "/rsc/", 5) == 0)
+        {
+            const CHAR * path_on_usb = resource + 1;  /* drop leading '/' */
+            return http_send_static_file(server_ptr, path_on_usb);
+        }
+
+        if (strncmp(resource, "/download/", 10) == 0)
+        {
+            const CHAR * file_path = resource + 10;
+            if (!file_path || file_path[0] == '\0')
+            {
+                return http_send_error(server_ptr, "No filename specified\r\n");
+            }
+            return http_send_file_download(server_ptr, file_path);
+        }
+
+        if (strcmp(resource, "/login") == 0)
+        {
+            return render_login_form(server_ptr, "");
+        }
+
+        if (strcmp(resource, "/logout") == 0)
+        {
+            g_logged_in = 0;
+            return http_send_error(server_ptr, "Logged out.\r\n");
+        }
+
+        if (strcmp(resource, "/") == 0)
+        {
+            /* Keep current directory listing for now */
+            return http_send_directory_listing(server_ptr, "");
+        }
+        else
+        {
+            const CHAR * dir_path = resource + 1;
+            return http_send_directory_listing(server_ptr, dir_path);
+        }
+    }
+    else if (request_type == NX_HTTP_SERVER_POST_REQUEST)
+    {
+        /* --- API: login --- */
+        if (strcmp(resource, "/api/login") == 0)
+        {
+            return http_handle_login(server_ptr, packet_ptr);
+        }
+
+        /* --- API: logout --- */
+        if (strcmp(resource, "/api/logout") == 0)
+        {
+            return http_handle_logout(server_ptr);
+        }
+
+        /* --- API: set password (requires login) --- */
+        if (strcmp(resource, "/api/set_password") == 0)
+        {
+            return http_handle_set_password(server_ptr, packet_ptr);
+        }
+
+        /* --- API: reset password (recovery mode) --- */
+        if (strcmp(resource, "/api/reset_password") == 0)
+        {
+            return http_handle_reset_password(server_ptr, packet_ptr);
+        }
+
+        /* --- API: delete (JS uses POST now) --- */
+        if (strncmp(resource, "/api/delete", 11) == 0)
+        {
+            if (!g_logged_in)
+            {
+                return http_handle_auth_check(server_ptr);
+            }
+
+            const CHAR * query = strchr(resource, '?');
+            CHAR path_param[MAX_PATH_LEN + 1];
+            path_param[0] = '\0';
+
+            if (query != NX_NULL)
+            {
+                const CHAR * p = strstr(query + 1, "path=");
+                if (p != NX_NULL)
+                {
+                    p += 5; /* skip "path=" */
+                    UINT i = 0;
+                    while (*p && *p != '&' && i < MAX_PATH_LEN)
+                    {
+                        path_param[i++] = *p++;
+                    }
+                    path_param[i] = '\0';
+                }
+            }
+
+            if (path_param[0] == '\0')
+            {
+                return http_send_error(server_ptr, "No path specified\r\n");
+            }
+
+            return http_handle_delete(server_ptr, path_param);
+        }
+
+        /* existing POST routes, e.g. /upload-chunk, /login (old) ... */
+        if (strncmp(resource, "/upload-chunk", 13) == 0)
+        {
+            if (!g_logged_in)
+            {
+                return http_send_error(server_ptr, "Not logged in.\r\n");
+            }
+            return http_handle_upload_chunk(server_ptr, resource, packet_ptr);
+        }
+
+        if (strncmp(resource, "/upload-chunk", 13) == 0)
+        {
+            /* Optional: reject uploads if not logged in. */
+            if (!g_logged_in)
+            {
+                return http_send_error(server_ptr, "Not logged in.\r\n");
+            }
+            return http_handle_upload_chunk(server_ptr, resource, packet_ptr);
+        }
+
+        if (strcmp(resource, "/login") == 0)
+        {
+            return http_handle_login(server_ptr, packet_ptr);
+        }
+    }
+
+    NX_PARAMETER_NOT_USED(packet_ptr);
+    return NX_SUCCESS;
+}
+
+

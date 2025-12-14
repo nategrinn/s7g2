@@ -1,10 +1,10 @@
 synergy/ssp/src/framework/tes/dave2d/dave_wedge.o: \
  ../synergy/ssp/src/framework/tes/dave2d/dave_wedge.c \
- C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_driver.h \
- C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_types.h \
- C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_errorcodes.h \
- C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_base.h \
- C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_math.h \
+ C:/Users/MSI-VAMPIRIC/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_driver.h \
+ C:/Users/MSI-VAMPIRIC/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_types.h \
+ C:/Users/MSI-VAMPIRIC/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_errorcodes.h \
+ C:/Users/MSI-VAMPIRIC/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_base.h \
+ C:/Users/MSI-VAMPIRIC/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_math.h \
  ../synergy/ssp/src/framework/tes/dave2d/dave_intern.h \
  ../synergy/ssp/src/framework/tes/dave2d/dave_registermap.h \
  ../synergy/ssp/src/framework/tes/dave2d/dave_base.h \
@@ -13,16 +13,16 @@ synergy/ssp/src/framework/tes/dave2d/dave_wedge.o: \
  ../synergy/ssp/src/framework/tes/dave2d/dave_hardware.h \
  ../synergy/ssp/src/framework/tes/dave2d/dave_context.h \
  ../synergy/ssp/src/framework/tes/dave2d/dave_gradient.h \
- C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_math.h \
+ C:/Users/MSI-VAMPIRIC/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_math.h \
  ../synergy/ssp/src/framework/tes/dave2d/dave_viewport.h \
  ../synergy/ssp/src/framework/tes/dave2d/dave_render.h \
  ../synergy/ssp/src/framework/tes/dave2d/dave_circle.h \
  ../synergy/ssp/src/framework/tes/dave2d/dave_wedge.h
-C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_driver.h:
-C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_types.h:
-C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_errorcodes.h:
-C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_base.h:
-C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_math.h:
+C:/Users/MSI-VAMPIRIC/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_driver.h:
+C:/Users/MSI-VAMPIRIC/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_types.h:
+C:/Users/MSI-VAMPIRIC/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_errorcodes.h:
+C:/Users/MSI-VAMPIRIC/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_base.h:
+C:/Users/MSI-VAMPIRIC/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_math.h:
 ../synergy/ssp/src/framework/tes/dave2d/dave_intern.h:
 ../synergy/ssp/src/framework/tes/dave2d/dave_registermap.h:
 ../synergy/ssp/src/framework/tes/dave2d/dave_base.h:
@@ -31,7 +31,7 @@ C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_math.h:
 ../synergy/ssp/src/framework/tes/dave2d/dave_hardware.h:
 ../synergy/ssp/src/framework/tes/dave2d/dave_context.h:
 ../synergy/ssp/src/framework/tes/dave2d/dave_gradient.h:
-C:/Users/mopak/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_math.h:
+C:/Users/MSI-VAMPIRIC/Desktop/s7g2/GUIApp/synergy/ssp/inc/framework/tes/dave_math.h:
 ../synergy/ssp/src/framework/tes/dave2d/dave_viewport.h:
 ../synergy/ssp/src/framework/tes/dave2d/dave_render.h:
 ../synergy/ssp/src/framework/tes/dave2d/dave_circle.h:
