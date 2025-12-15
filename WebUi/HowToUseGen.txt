@@ -1,0 +1,2 @@
+Run in cmd line:
+python gen_web_assets.py -o ./generated -r / index.html app.html file_manager.js

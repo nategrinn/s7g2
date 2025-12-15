@@ -102,6 +102,13 @@ void hmi_screen_update(void)
         }
             break;
 
+        case HMI_ERROR_ERASING_WEBAPP_FILES:
+            hmi_set_status_led(LED_ON, LED_OFF, LED_ON);
+
+            message.gx_string_ptr      = "Couldn't erase WebApp files";
+            message.gx_string_length   = strlen("Couldn't erase WebApp files");
+            break;
+
         default:
             break;
     }

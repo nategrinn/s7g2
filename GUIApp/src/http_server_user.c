@@ -1306,6 +1306,7 @@ static UINT http_handle_logout(NX_HTTP_SERVER * server_ptr)
 
     http_send_data(server_ptr, header, header_len);
     http_send_data(server_ptr, json, (UINT) strlen(json));
+
     return NX_HTTP_CALLBACK_COMPLETED;
 }
 

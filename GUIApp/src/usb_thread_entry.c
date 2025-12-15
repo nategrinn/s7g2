@@ -4,6 +4,7 @@
 #include "ux_host_class_storage.h"
 #include "fx_api.h"
 #include "hmi_state.h"
+#include "../www/web_assets.h"
 
 /* Event flags created in configurator (USB Plug Event Flags) */
 extern TX_EVENT_FLAGS_GROUP         g_usb_plug_events;
@@ -84,7 +85,6 @@ void usb_thread_entry(void)
 {
     UINT        status;
     ULONG       actual_flags;
-    FX_FILE     file;
 
     /* At startup, tell the HMI we are waiting for USB */
     g_hmi_state = HMI_WAIT_USB;
@@ -113,28 +113,22 @@ void usb_thread_entry(void)
             /* Optional sanity check: media looks valid */
             if( g_usb_media->fx_media_id == FX_MEDIA_ID )
             {
-                /* -- TEST: create/write a file on the USB key -- */
+                /* Create web app files in drive:
+                 * - index.html
+                 * - app.html
+                 * - file_manager.js
+                 */
+                status = webui_provision_to_usb(g_usb_media);
 
-                /* Ignore error if the file already exists */
-                fx_file_create(g_usb_media, "usb_test.txt");
-
-                status = fx_file_open(g_usb_media,
-                                      &file,
-                                      "usb_test.txt",
-                                      FX_OPEN_FOR_WRITE);
-
-                if( status == FX_SUCCESS )
+                if( status != FX_SUCCESS )
                 {
-                    CHAR buffer[] = "Hello world";
-
-                    fx_file_seek(&file, 0);         /* Go to start or end */
-                    fx_file_write(&file, buffer, sizeof(buffer) - 1);
-                    fx_file_close(&file);
-                    fx_media_flush(g_usb_media);
+                    g_hmi_state = HMI_WAIT_USB;
                 }
-
-                /* If you got here, onsider USB ready */
-                g_hmi_state = HMI_USB_READY;
+                else
+                {
+                    /* If you got here, onsider USB ready */
+                    g_hmi_state = HMI_USB_READY;
+                }
             }
             else
             {
@@ -146,7 +140,19 @@ void usb_thread_entry(void)
         if (actual_flags & USB_PLUG_EVENT_REMOVE)
         {
             /* When USB is removed, go back to WAIT_USB */
+#if 0       /* This is impossible if no permission is asked before removing the USB */
+            status = webui_delete_server_app_files(g_usb_media);
+            if( status != FX_SUCCESS )
+            {
+                g_hmi_state = HMI_ERROR_ERASING_WEBAPP_FILES;
+            }
+            else
+            {
+                g_hmi_state = HMI_WAIT_USB;
+            }
+#else
             g_hmi_state = HMI_WAIT_USB;
+#endif
         }
     }
 }

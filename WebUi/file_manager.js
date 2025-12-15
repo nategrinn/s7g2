@@ -33,7 +33,7 @@ async function refreshUsbUsage() {
     }
 }
 
-let viewMode = localStorage.getItem('viewMode') || 'list';
+let viewMode = localStorage.getItem('viewMode') || 'grid';
 
 function applyViewMode() {
     const ul = document.getElementById('file-listing');
