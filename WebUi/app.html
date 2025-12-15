@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureFile Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
+    <style>
+        /* --- 1. Variables & Global Reset --- */
+        :root {
+            --primary-color: #007bff;
+            --secondary-color: #6c757d;
+            --background-color: #f4f7f6;
+            /* Light gray background */
+            --text-color: #343a40;
+            --danger-color: #dc3545;
+            --border-color: #dee2e6;
+            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-family);
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: var(--background-color);
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 95%;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Utility button style */
+        .icon-btn,
+        .small-btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background-color 0.2s;
+        }
+
+        .icon-btn:hover,
+        .small-btn:hover {
+            background-color: #0056b3;
+        }
+
+        /* --- 2. Header & Controls --- */
+        .file-header {
+            background: var(--primary-color);
+            color: white;
+            padding: 15px 5%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            position: sticky;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .user-controls button {
+            margin-left: 10px;
+        }
+
+        /* --- 3. Main Layout: Sidebar + List (Desktop) --- */
+        .content-wrapper {
+            display: flex;
+            gap: 20px;
+            padding: 20px 0;
+        }
+
+        /* Sidebar (Directory Tree) */
+        .sidebar {
+            width: 280px;
+            flex-shrink: 0;
+            padding: 20px;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            height: fit-content;
+        }
+
+        .sidebar h3 {
+            margin-bottom: 15px;
+            color: var(--text-color);
+        }
+
+        .tree-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .tree-list li {
+            padding: 8px 5px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .tree-list li:hover {
+            background-color: #f0f0f0;
+        }
+
+        .tree-list i {
+            margin-right: 8px;
+            color: var(--secondary-color);
+        }
+
+        .usb-usage-card {
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .usb-usage-title {
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--text-color);
+        }
+
+        .usb-donut {
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            margin: 0 auto;
+            position: relative;
+            background: conic-gradient(var(--primary-color) calc(var(--p) * 1%), #e9ecef 0);
+        }
+
+        .usb-donut::before {
+            content: "";
+            position: absolute;
+            inset: 14px;
+            background: #fff;
+            border-radius: 50%;
+        }
+
+        .usb-donut-center {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            z-index: 1;
+            padding: 10px;
+        }
+
+        .usb-donut-pct {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--text-color);
+        }
+
+        .usb-donut-sub {
+            font-size: 0.75rem;
+            color: var(--secondary-color);
+            margin-top: 4px;
+            line-height: 1.2;
+        }
+
+        /* Grid view */
+        .file-list.grid {
+            border-top: none;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+            gap: 12px;
+        }
+
+        .file-list.grid .file-item {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .file-list.grid .file-size-col {
+            width: auto;
+            text-align: left;
+            margin-top: 6px;
+        }
+
+        .file-list.grid .item-actions {
+            width: auto;
+            margin-top: 10px;
+            justify-content: flex-start;
+        }
+
+
+
+        /* --- 4. File List Area --- */
+        .file-list-main {
+            flex-grow: 1;
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+        }
+
+        /* --- Preview modal popup --- */
+        .preview-modal.hidden {
+            display: none;
+        }
+
+        .preview-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+
+            /* center card */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            padding: 24px;
+            /* keeps margins on small screens */
+        }
+
+        .preview-modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+        }
+
+        .preview-modal-card {
+            position: relative;
+            width: min(1100px, 92vw);
+            height: min(80vh, 800px);
+            margin: 0;
+            /* important: remove top push */
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.30);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        body.modal-open { overflow: hidden; }
+
+
+        .preview-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border-color);
+            background: #fff;
+        }
+
+        .preview-title {
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .preview-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .preview-body {
+            flex: 1;
+            padding: 10px;
+            overflow: auto;
+        }
+
+        .preview-body img,
+        .preview-body iframe,
+        .preview-body video {
+            width: 100%;
+            height: 100%;
+            border: 0;
+            display: block;
+        }
+
+        .preview-body pre {
+            white-space: pre;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            font-size: 0.9rem;
+            line-height: 1.35;
+        }
+
+        /* Make embedded previews fill the panel */
+        .preview-body img,
+        .preview-body iframe {
+            width: 100%;
+            height: 100%;
+            border: 0;
+            display: block;
+        }
+
+
+        .current-path {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+        }
+
+        /* Actions Bar */
+        .file-actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        #search-files {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+        }
+
+        /* --- 5. File Table/List Styling --- */
+        .file-list {
+            list-style: none;
+            padding: 0;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        /* Column widths */
+        .file-icon {
+            width: 30px;
+            text-align: center;
+        }
+
+        .file-name-col {
+            flex-grow: 1;
+        }
+
+        .file-size-col {
+            width: 90px;
+            text-align: right;
+            color: var(--secondary-color);
+            font-size: 0.9em;
+        }
+
+        .item-actions {
+            width: 100px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 5px;
+        }
+
+
+        .file-icon img {
+            width: 20px;
+            height: 20px;
+            vertical-align: middle;
+        }
+
+        .file-name-col a {
+            text-decoration: none;
+            color: var(--text-color);
+            font-weight: 500;
+        }
+
+        .file-item.folder .file-name-col a {
+            color: var(--primary-color);
+        }
+
+        .action-btn {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--secondary-color);
+            padding: 5px;
+            transition: color 0.2s;
+        }
+
+        .action-btn:hover {
+            color: var(--primary-color);
+        }
+
+        .delete-btn:hover {
+            color: var(--danger-color);
+        }
+
+        /* --- 6. Responsive Adjustments --- */
+        @media (max-width: 992px) {
+
+            /* On tablets and smaller, stack the layout */
+            .content-wrapper {
+                flex-direction: column;
+            }
+
+            /* Hide the sidebar on smaller screens by default to save space */
+            .sidebar {
+                display: none;
+                width: 100%;
+            }
+
+            /* Ensure main content uses full width */
+            .file-list-main {
+                width: 100%;
+            }
+        }
+
+        @media (max-width: 576px) {
+
+            /* Stack controls on very small screens */
+            .file-actions {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .file-actions button {
+                width: 100%;
+                margin-top: 5px;
+            }
+
+            /* Hide file size on very small screens */
+            .file-size-col {
+                display: none;
+            }
+
+            /* Reduce item action width */
+            .item-actions {
+                width: 70px;
+            }
+        }
+
+        /* Mini upload progress bar */
+        .upload-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 6px;
+        }
+
+        .upload-progress {
+            width: 90px;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.35);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .upload-progress-bar {
+            height: 100%;
+            width: 0%;
+            background: #ffffff;
+            border-radius: 999px;
+            transition: width 120ms linear;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="file-manager-page">
+        <header class="file-header">
+            <div class="logo">OS.iris</div>
+            <div class="user-controls">
+                <div class="upload-wrap">
+                    <button id="upload-btn" class="icon-btn"><i class="fas fa-upload"></i> <span
+                            class="hide-on-mobile">Upload</span></button>
+
+                    <!-- Mini upload progress bar (hidden by default) -->
+                    <div id="upload-progress" class="upload-progress" style="display:none;">
+                        <div id="upload-progress-bar" class="upload-progress-bar"></div>
+                    </div>
+                </div>
+
+                <button id="logout-btn" class="icon-btn"><i class="fas fa-sign-out-alt"></i> <span
+                        class="hide-on-mobile">Logout</span></button>
+            </div>
+        </header>
+
+        <div class="content-wrapper container">
+
+            <aside class="sidebar" id="directory-tree">
+                <h3><i class="fas fa-sitemap"></i> Directory Tree</h3>
+                <ul class="tree-list">
+                    <li><i class="fas fa-home"></i> <a href="#" data-path="/">Root Folder</a></li>
+                </ul>
+                <div class="usb-usage-card">
+                    <div class="usb-usage-title">
+                        <h3><i class="fas fa-hdd"></i> USB Usage</h3>
+                    </div>
+
+                    <div class="usb-donut" id="usb-donut" style="--p:0;">
+                        <div class="usb-donut-center">
+                            <div class="usb-donut-pct" id="usb-used-pct">--%</div>
+                            <div class="usb-donut-sub" id="usb-used-bytes">-- / --</div>
+                        </div>
+                    </div>
+                </div>
+
+            </aside>
+
+            <main class="file-list-main">
+                <div class="current-path">Current Folder: <span id="current-path-display">/</span></div>
+
+                <div class="file-actions">
+                    <input type="text" id="search-files" placeholder="Search current folder...">
+                    <button id="new-folder-btn" class="small-btn"><i class="fas fa-folder-plus"></i> New Folder</button>
+                    <button id="view-toggle-btn" class="small-btn" title="Toggle grid/list">
+                        <i class="fas fa-th"></i>
+                    </button>
+
+                </div>
+
+                <ul id="file-listing" class="file-list">
+                </ul>
+
+
+                <p id="empty-folder-message" style="margin-top: 20px; color: var(--secondary-color); display:none;">
+                    This folder is empty.
+                </p>
+            </main>
+        </div>
+    </div>
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="preview-modal hidden" role="dialog" aria-modal="true" aria-label="File preview">
+        <div class="preview-modal-backdrop" id="preview-backdrop"></div>
+
+        <div class="preview-modal-card">
+            <div class="preview-header">
+                <div class="preview-title" id="preview-title">Preview</div>
+
+                <div class="preview-actions">
+                    <button id="preview-download-btn" class="small-btn" title="Download">
+                        <i class="fas fa-download"></i>
+                    </button>
+                    <button id="preview-close-btn" class="small-btn" title="Close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="preview-body" class="preview-body">
+                <!-- injected by JS -->
+            </div>
+        </div>
+    </div>
+    <script>
+        (async () => {
+            try {
+                const r = await fetch('/api/auth_status', { cache: 'no-store' });
+                if (!r.ok) { window.location.replace('/index.html'); return; }
+                const s = await r.json();
+                if (!s || !s.logged_in) { window.location.replace('/index.html'); return; }
+
+                // Only load the app JS when authenticated.
+                const script = document.createElement('script');
+                script.src = '/file_manager.js';
+                document.body.appendChild(script);
+            } catch (e) {
+                window.location.replace('/index.html');
+            }
+        })();
+    </script>
+</body>
+
+</html>
