@@ -1638,7 +1638,7 @@
     <module id="module.el.nxd_dhcp_common.621893637"/>
     <module id="module.el.nxd_http_server.1185952538">
       <property id="module.el.nx_http_server.name" value="g_http_server0"/>
-      <property id="module.el.nx_http_server.stack_size" value="5120"/>
+      <property id="module.el.nx_http_server.stack_size" value="7168"/>
       <property id="module.el.nx_http_server.authentication_function" value="NULL"/>
       <property id="module.el.nx_http_server.request_notify_function" value="http_request_notify"/>
       <property id="module.el.nx_http_server.init_function" value="http_server_init0"/>
@@ -2092,7 +2092,7 @@
       <property id="config.el.nxd_http_server.multipart" value="config.el.nxd_http_server.multipart.disable"/>
       <property id="config.el.nxd_http_server.priority" value="4"/>
       <property id="config.el.nxd_http_server.time_slice" value="2"/>
-      <property id="config.el.nxd_http_server.server_window_size" value="2048"/>
+      <property id="config.el.nxd_http_server.server_window_size" value="4096"/>
       <property id="config.el.nxd_http_server.server_timeout" value="10"/>
       <property id="config.el.nxd_http_server.server_timeout_accept" value="10"/>
       <property id="config.el.nxd_http_server.server_timeout_disconnect" value="10"/>
