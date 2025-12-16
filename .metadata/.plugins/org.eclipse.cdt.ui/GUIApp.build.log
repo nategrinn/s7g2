@@ -1,26 +1,11 @@
-00:57:05 **** Incremental Build of configuration Debug for project GUIApp ****
-make -r -j12 all 
-Building file: ../src/main_thread_entry.c
-../src/main_thread_entry.c: In function 'main_thread_entry':
-../src/main_thread_entry.c:340:17: warning: unused variable 'previous_state' [-Wunused-variable]
-  340 |     hmi_state_t previous_state = g_hmi_state;
-      |                 ^~~~~~~~~~~~~~
-../src/main_thread_entry.c: In function 'hmi_screen_update':
-../src/main_thread_entry.c:91:42: warning: ' G' directive output may be truncated writing 2 bytes into a region of size between 1 and 24 [-Wformat-truncation=]
-   91 |     snprintf(out, out_sz, "%llu MB / %llu G",
-      |                                          ^~
-../src/main_thread_entry.c:91:5: note: 'snprintf' output between 11 and 34 bytes into a destination of size 32
-   91 |     snprintf(out, out_sz, "%llu MB / %llu G",
-      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   92 |              (unsigned long long)used_mb,
-      |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   93 |              (unsigned long long)total_g);
-      |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+14:25:31 **** Incremental Build of configuration Debug for project GUIApp ****
+make -r -j8 all 
+Building file: ../src/www/web_assets.c
 Building target: GUIApp.elf
 arm-none-eabi-objcopy -O srec "GUIApp.elf"  "GUIApp.srec"
 arm-none-eabi-size --format=berkeley "GUIApp.elf"
    text	   data	    bss	    dec	    hex	filename
- 798924	   4072	 512804	1315800	 1413d8	GUIApp.elf
+ 800468	   3316	 513520	1317304	 1419b8	GUIApp.elf
 
-00:57:07 Build Finished. 0 errors, 2 warnings. (took 1s.661ms)
+14:25:33 Build Finished. 0 errors, 0 warnings. (took 2s.147ms)
 

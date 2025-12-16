@@ -1,143 +1,127 @@
-00:49:23 **** Incremental Build of configuration Debug for project GUIApp ****
-make -r -j12 all 
-Building file: ../src/gui/guiapp_resources.c
-Building file: ../src/gui/guiapp_specifications.c
-Building file: ../src/guiapp_event_handlers.c
-Building file: ../src/main_thread_entry.c
-../src/main_thread_entry.c: In function 'main_thread_entry':
-../src/main_thread_entry.c:327:17: warning: unused variable 'previous_state' [-Wunused-variable]
-  327 |     hmi_state_t previous_state = g_hmi_state;
-      |                 ^~~~~~~~~~~~~~
-../src/guiapp_event_handlers.c:13:13: warning: 'update_prompt_text_id' declared 'static' but never defined [-Wunused-function]
-   13 | static void update_prompt_text_id(GX_WIDGET * p_widget, GX_RESOURCE_ID id, UINT string_id);
-      |             ^~~~~~~~~~~~~~~~~~~~~
-../src/guiapp_event_handlers.c:14:13: warning: 'update_button_text_id' declared 'static' but never defined [-Wunused-function]
-   14 | static void update_button_text_id(GX_WIDGET * p_widget, GX_RESOURCE_ID id, UINT string_id);
-      |             ^~~~~~~~~~~~~~~~~~~~~
-../src/guiapp_event_handlers.c:8:13: warning: 'button_enabled' defined but not used [-Wunused-variable]
-    8 | static bool button_enabled = false;
-      |             ^~~~~~~~~~~~~~
+13:02:50 **** Incremental Build of configuration Debug for project GUIApp ****
+make -r -j8 all 
+arm-none-eabi-size --format=berkeley "GUIApp.elf"
+   text	   data	    bss	    dec	    hex	filename
+ 801548	   3316	 513520	1318384	 141df0	GUIApp.elf
+14:02:48 **** Incremental Build of configuration Debug for project GUIApp ****
+make -r -j8 all 
+Building file: ../src/www/webui_provision.c
+../src/www/webui_provision.c:57:6: warning: no previous declaration for 'webui_provision_to_usb' [-Wmissing-declarations]
+   57 | UINT webui_provision_to_usb(FX_MEDIA * media)
+      |      ^~~~~~~~~~~~~~~~~~~~~~
+../src/www/webui_provision.c:21:13: warning: 'file_exists' defined but not used [-Wunused-function]
+   21 | static UINT file_exists(FX_MEDIA * media, CHAR * path)
+      |             ^~~~~~~~~~~
 Building target: GUIApp.elf
 arm-none-eabi-objcopy -O srec "GUIApp.elf"  "GUIApp.srec"
 arm-none-eabi-size --format=berkeley "GUIApp.elf"
    text	   data	    bss	    dec	    hex	filename
- 798732	   4072	 512804	1315608	 141318	GUIApp.elf
-00:53:19 **** Incremental Build of configuration Debug for project GUIApp ****
-make -r -j12 all 
-Building file: ../src/main_thread_entry.c
-../src/main_thread_entry.c: In function 'hmi_screen_update':
-../src/main_thread_entry.c:155:40: warning: passing argument 1 of 'usb_used_percent_get' from incompatible pointer type [-Wincompatible-pointer-types]
-  155 |             (void)usb_used_percent_get(&used_pct);
-      |                                        ^~~~~~~~~
-      |                                        |
-      |                                        UINT * {aka unsigned int *}
-../src/main_thread_entry.c:57:43: note: expected 'ULONG64 *' {aka 'long long unsigned int *'} but argument is of type 'UINT *' {aka 'unsigned int *'}
-   57 | static UINT usb_used_percent_get(ULONG64 *p_used, ULONG64 *p_total)
-      |                                  ~~~~~~~~~^~~~~~
-../src/main_thread_entry.c:155:19: error: too few arguments to function 'usb_used_percent_get'
-  155 |             (void)usb_used_percent_get(&used_pct);
-      |                   ^~~~~~~~~~~~~~~~~~~~
-../src/main_thread_entry.c:57:13: note: declared here
-   57 | static UINT usb_used_percent_get(ULONG64 *p_used, ULONG64 *p_total)
-      |             ^~~~~~~~~~~~~~~~~~~~
-../src/main_thread_entry.c:173:20: warning: implicit declaration of function 'usb_used_total_bytes_get' [-Wimplicit-function-declaration]
-  173 |             (void) usb_used_total_bytes_get(&used_b, &total_b);
-      |                    ^~~~~~~~~~~~~~~~~~~~~~~~
-../src/main_thread_entry.c:212:30: warning: passing argument 1 of 'usb_used_percent_get' from incompatible pointer type [-Wincompatible-pointer-types]
-  212 |         usb_used_percent_get(&used_pct);
-      |                              ^~~~~~~~~
-      |                              |
-      |                              UINT * {aka unsigned int *}
-../src/main_thread_entry.c:57:43: note: expected 'ULONG64 *' {aka 'long long unsigned int *'} but argument is of type 'UINT *' {aka 'unsigned int *'}
-   57 | static UINT usb_used_percent_get(ULONG64 *p_used, ULONG64 *p_total)
-      |                                  ~~~~~~~~~^~~~~~
-../src/main_thread_entry.c:212:9: error: too few arguments to function 'usb_used_percent_get'
-  212 |         usb_used_percent_get(&used_pct);
-      |         ^~~~~~~~~~~~~~~~~~~~
-../src/main_thread_entry.c:57:13: note: declared here
-   57 | static UINT usb_used_percent_get(ULONG64 *p_used, ULONG64 *p_total)
-      |             ^~~~~~~~~~~~~~~~~~~~
-../src/main_thread_entry.c: In function 'main_thread_entry':
-../src/main_thread_entry.c:342:17: warning: unused variable 'previous_state' [-Wunused-variable]
-  342 |     hmi_state_t previous_state = g_hmi_state;
-      |                 ^~~~~~~~~~~~~~
-make: *** [src/subdir.mk:49: src/main_thread_entry.o] Error 1
-"make -r -j12 all" terminated with exit code 2. Build might be incomplete.
-00:55:06 **** Incremental Build of configuration Debug for project GUIApp ****
-make -r -j12 all 
-Building file: ../src/main_thread_entry.c
-../src/main_thread_entry.c: In function 'hmi_screen_update':
-../src/main_thread_entry.c:159:20: warning: implicit declaration of function 'usb_used_total_bytes_get' [-Wimplicit-function-declaration]
-  159 |             (void) usb_used_total_bytes_get(&used_b, &total_b);
-      |                    ^~~~~~~~~~~~~~~~~~~~~~~~
-../src/main_thread_entry.c:211:30: warning: passing argument 1 of 'usb_used_percent_get' from incompatible pointer type [-Wincompatible-pointer-types]
-  211 |         usb_used_percent_get(&used_pct);
-      |                              ^~~~~~~~~
-      |                              |
-      |                              UINT * {aka unsigned int *}
-../src/main_thread_entry.c:57:43: note: expected 'ULONG64 *' {aka 'long long unsigned int *'} but argument is of type 'UINT *' {aka 'unsigned int *'}
-   57 | static UINT usb_used_percent_get(ULONG64 *p_used, ULONG64 *p_total)
-      |                                  ~~~~~~~~~^~~~~~
-../src/main_thread_entry.c:211:9: error: too few arguments to function 'usb_used_percent_get'
-  211 |         usb_used_percent_get(&used_pct);
-      |         ^~~~~~~~~~~~~~~~~~~~
-../src/main_thread_entry.c:57:13: note: declared here
-   57 | static UINT usb_used_percent_get(ULONG64 *p_used, ULONG64 *p_total)
-      |             ^~~~~~~~~~~~~~~~~~~~
-../src/main_thread_entry.c: In function 'main_thread_entry':
-../src/main_thread_entry.c:341:17: warning: unused variable 'previous_state' [-Wunused-variable]
-  341 |     hmi_state_t previous_state = g_hmi_state;
-      |                 ^~~~~~~~~~~~~~
-make: *** [src/subdir.mk:49: src/main_thread_entry.o] Error 1
-"make -r -j12 all" terminated with exit code 2. Build might be incomplete.
-00:55:29 **** Incremental Build of configuration Debug for project GUIApp ****
-make -r -j12 all 
-Building file: ../src/main_thread_entry.c
-../src/main_thread_entry.c: In function 'hmi_screen_update':
-../src/main_thread_entry.c:211:9: warning: implicit declaration of function 'usb_used_percent_get' [-Wimplicit-function-declaration]
-  211 |         usb_used_percent_get(&used_pct);
-      |         ^~~~~~~~~~~~~~~~~~~~
-../src/main_thread_entry.c: In function 'main_thread_entry':
-../src/main_thread_entry.c:341:17: warning: unused variable 'previous_state' [-Wunused-variable]
-  341 |     hmi_state_t previous_state = g_hmi_state;
-      |                 ^~~~~~~~~~~~~~
-../src/main_thread_entry.c: In function 'hmi_screen_update':
-../src/main_thread_entry.c:91:42: warning: ' G' directive output may be truncated writing 2 bytes into a region of size between 1 and 24 [-Wformat-truncation=]
-   91 |     snprintf(out, out_sz, "%llu MB / %llu G",
-      |                                          ^~
-../src/main_thread_entry.c:91:5: note: 'snprintf' output between 11 and 34 bytes into a destination of size 32
-   91 |     snprintf(out, out_sz, "%llu MB / %llu G",
-      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   92 |              (unsigned long long)used_mb,
-      |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   93 |              (unsigned long long)total_g);
-      |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Building target: GUIApp.elf
-c:/renesas/synergy/e2studio_v2025-01_ssp_v2.7.0/toolchains/gcc_arm/gcc-arm-none-eabi-10.3-2021.10/bin/../lib/gcc/arm-none-eabi/10.3.1/../../../../arm-none-eabi/bin/ld.exe: ./src/main_thread_entry.o: in function `hmi_screen_update':
-C:\Users\MSI-VAMPIRIC\Desktop\s7g2\GUIApp\Debug/../src/main_thread_entry.c:211: undefined reference to `usb_used_percent_get'
-collect2.exe: error: ld returned 1 exit status
-make: *** [makefile:128: GUIApp.elf] Error 1
-"make -r -j12 all" terminated with exit code 2. Build might be incomplete.
-00:57:05 **** Incremental Build of configuration Debug for project GUIApp ****
-make -r -j12 all 
-Building file: ../src/main_thread_entry.c
-../src/main_thread_entry.c: In function 'main_thread_entry':
-../src/main_thread_entry.c:340:17: warning: unused variable 'previous_state' [-Wunused-variable]
-  340 |     hmi_state_t previous_state = g_hmi_state;
-      |                 ^~~~~~~~~~~~~~
-../src/main_thread_entry.c: In function 'hmi_screen_update':
-../src/main_thread_entry.c:91:42: warning: ' G' directive output may be truncated writing 2 bytes into a region of size between 1 and 24 [-Wformat-truncation=]
-   91 |     snprintf(out, out_sz, "%llu MB / %llu G",
-      |                                          ^~
-../src/main_thread_entry.c:91:5: note: 'snprintf' output between 11 and 34 bytes into a destination of size 32
-   91 |     snprintf(out, out_sz, "%llu MB / %llu G",
-      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   92 |              (unsigned long long)used_mb,
-      |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-   93 |              (unsigned long long)total_g);
-      |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 801372	   3316	 513520	1318208	 141d40	GUIApp.elf
+14:03:33 **** Incremental Build of configuration Debug for project GUIApp ****
+make -r -j8 all 
+Building file: ../src/www/web_assets.c
+Building file: ../src/www/webui_provision.c
+Building file: ../src/usb_thread_entry.c
+In file included from ../src/www/web_assets.c:1:
+../src/www/web_assets.h:15:1: error: unknown type name 'UINT'
+   15 | UINT webui_provision_to_usb(FX_MEDIA * media);
+      | ^~~~
+../src/www/web_assets.h:15:29: error: unknown type name 'FX_MEDIA'
+   15 | UINT webui_provision_to_usb(FX_MEDIA * media);
+      |                             ^~~~~~~~
+make: *** [src/www/subdir.mk:28: src/www/web_assets.o] Error 1
+make: *** Waiting for unfinished jobs....
+../src/www/webui_provision.c:21:13: warning: 'file_exists' defined but not used [-Wunused-function]
+   21 | static UINT file_exists(FX_MEDIA * media, CHAR * path)
+      |             ^~~~~~~~~~~
+"make -r -j8 all" terminated with exit code 2. Build might be incomplete.
+14:03:55 **** Incremental Build of configuration Debug for project GUIApp ****
+make -r -j8 all 
+Building file: ../src/www/web_assets.c
+Building file: ../src/www/webui_provision.c
+Building file: ../src/usb_thread_entry.c
+In file included from ../src/www/web_assets.c:1:
+../src/www/web_assets.h:16:1: error: unknown type name 'UINT'
+   16 | UINT webui_provision_to_usb(FX_MEDIA * media);
+      | ^~~~
+../src/www/web_assets.h:16:29: error: unknown type name 'FX_MEDIA'
+   16 | UINT webui_provision_to_usb(FX_MEDIA * media);
+      |                             ^~~~~~~~
+make: *** [src/www/subdir.mk:28: src/www/web_assets.o] Error 1
+make: *** Waiting for unfinished jobs....
+../src/www/webui_provision.c:21:13: warning: 'file_exists' defined but not used [-Wunused-function]
+   21 | static UINT file_exists(FX_MEDIA * media, CHAR * path)
+      |             ^~~~~~~~~~~
+"make -r -j8 all" terminated with exit code 2. Build might be incomplete.
+14:04:20 **** Incremental Build of configuration Debug for project GUIApp ****
+make -r -j8 all 
+Building file: ../src/www/web_assets.c
+Building file: ../src/www/webui_provision.c
+Building file: ../src/usb_thread_entry.c
+../src/www/webui_provision.c:21:13: warning: 'file_exists' defined but not used [-Wunused-function]
+   21 | static UINT file_exists(FX_MEDIA * media, CHAR * path)
+      |             ^~~~~~~~~~~
 Building target: GUIApp.elf
 arm-none-eabi-objcopy -O srec "GUIApp.elf"  "GUIApp.srec"
 arm-none-eabi-size --format=berkeley "GUIApp.elf"
    text	   data	    bss	    dec	    hex	filename
- 798924	   4072	 512804	1315800	 1413d8	GUIApp.elf
+ 801372	   3316	 513520	1318208	 141d40	GUIApp.elf
+14:06:07 **** Incremental Build of configuration Debug for project GUIApp ****
+make -r -j8 all 
+Building file: ../src/www/webui_provision.c
+../src/www/webui_provision.c:21:13: warning: 'file_exists' defined but not used [-Wunused-function]
+   21 | static UINT file_exists(FX_MEDIA * media, CHAR * path)
+      |             ^~~~~~~~~~~
+../src/www/webui_provision.c:14:13: warning: 'ensure_dir' defined but not used [-Wunused-function]
+   14 | static UINT ensure_dir(FX_MEDIA * media, CHAR * dir_path)
+      |             ^~~~~~~~~~
+../src/www/webui_provision.c: In function 'webui_provision_to_usb':
+../src/www/webui_provision.c:64:8: warning: 'st' is used uninitialized [-Wuninitialized]
+   64 |     if (st != FX_SUCCESS) return st;
+      |        ^
+../src/www/webui_provision.c:59:10: note: 'st' was declared here
+   59 |     UINT st;
+      |          ^~
+Building target: GUIApp.elf
+arm-none-eabi-objcopy -O srec "GUIApp.elf"  "GUIApp.srec"
+arm-none-eabi-size --format=berkeley "GUIApp.elf"
+   text	   data	    bss	    dec	    hex	filename
+ 800476	   3316	 513520	1317312	 1419c0	GUIApp.elf
+14:06:34 **** Incremental Build of configuration Debug for project GUIApp ****
+make -r -j8 all 
+Building file: ../src/www/webui_provision.c
+../src/www/webui_provision.c:21:13: warning: 'file_exists' defined but not used [-Wunused-function]
+   21 | static UINT file_exists(FX_MEDIA * media, CHAR * path)
+      |             ^~~~~~~~~~~
+../src/www/webui_provision.c:14:13: warning: 'ensure_dir' defined but not used [-Wunused-function]
+   14 | static UINT ensure_dir(FX_MEDIA * media, CHAR * dir_path)
+      |             ^~~~~~~~~~
+Building target: GUIApp.elf
+arm-none-eabi-objcopy -O srec "GUIApp.elf"  "GUIApp.srec"
+arm-none-eabi-size --format=berkeley "GUIApp.elf"
+   text	   data	    bss	    dec	    hex	filename
+ 800476	   3316	 513520	1317312	 1419c0	GUIApp.elf
+14:17:17 **** Incremental Build of configuration Debug for project GUIApp ****
+make -r -j8 all 
+Building file: ../src/www/web_assets.c
+Building target: GUIApp.elf
+arm-none-eabi-objcopy -O srec "GUIApp.elf"  "GUIApp.srec"
+arm-none-eabi-size --format=berkeley "GUIApp.elf"
+   text	   data	    bss	    dec	    hex	filename
+ 800468	   3316	 513520	1317304	 1419b8	GUIApp.elf
+14:21:27 **** Incremental Build of configuration Debug for project GUIApp ****
+make -r -j8 all 
+Building file: ../src/www/web_assets.c
+Building target: GUIApp.elf
+arm-none-eabi-objcopy -O srec "GUIApp.elf"  "GUIApp.srec"
+arm-none-eabi-size --format=berkeley "GUIApp.elf"
+   text	   data	    bss	    dec	    hex	filename
+ 800468	   3316	 513520	1317304	 1419b8	GUIApp.elf
+14:25:31 **** Incremental Build of configuration Debug for project GUIApp ****
+make -r -j8 all 
+Building file: ../src/www/web_assets.c
+Building target: GUIApp.elf
+arm-none-eabi-objcopy -O srec "GUIApp.elf"  "GUIApp.srec"
+arm-none-eabi-size --format=berkeley "GUIApp.elf"
+   text	   data	    bss	    dec	    hex	filename
+ 800468	   3316	 513520	1317304	 1419b8	GUIApp.elf

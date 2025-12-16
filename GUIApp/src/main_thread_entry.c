@@ -1,4 +1,5 @@
 /* Main Thread entry function */
+#include <common_resource.h>
 #include "main_thread.h"
 #include "bsp_api.h"
 #include "gx_api.h"
@@ -54,24 +55,36 @@ static void ip_to_string(ULONG ip, char *buf, UINT buf_size)
     snprintf(buf, buf_size, "%u.%u.%u.%u", b1, b2, b3, b4);
 }
 
-static UINT usb_used_total_bytes_get(ULONG64 *p_used, ULONG64 *p_total)
+UINT usb_used_total_bytes_get(ULONG64 *p_used, ULONG64 *p_total)
 {
-    FX_MEDIA *m = g_usb_media;
+    if (!p_used || !p_total)
+    {
+        return FX_PTR_ERROR;
+    }
 
+    *p_used  = 0ULL;
+    *p_total = 0ULL;
+
+    FX_MEDIA *m = g_usb_media;
+    if ((m == FX_NULL) || (m->fx_media_id != FX_MEDIA_ID))
+    {
+        return FX_NOT_OPEN;
+    }
+
+    /* Total bytes on volume */
     ULONG64 total =
         (ULONG64)m->fx_media_total_clusters *
         (ULONG64)m->fx_media_sectors_per_cluster *
         (ULONG64)m->fx_media_bytes_per_sector;
 
+    /* Free bytes on volume */
     ULONG64 freeb =
         (ULONG64)m->fx_media_available_clusters *
         (ULONG64)m->fx_media_sectors_per_cluster *
         (ULONG64)m->fx_media_bytes_per_sector;
 
-    if (total == 0)
+    if (total == 0ULL)
     {
-        *p_used = 0;
-        *p_total = 0;
         return FX_SUCCESS;
     }
 
@@ -82,15 +95,46 @@ static UINT usb_used_total_bytes_get(ULONG64 *p_used, ULONG64 *p_total)
     return FX_SUCCESS;
 }
 
-static void usb_usage_to_string(char *out, size_t out_sz, ULONG64 used_bytes, ULONG64 total_bytes)
+
+static void format_bytes_dec(char *o, size_t s, ULONG64 bytes)
 {
-    ULONG64 used_mb  = (used_bytes  + 500000ULL)     / 1000000ULL;      /* rounded */
-    ULONG64 total_g  = (total_bytes + 500000000ULL)  / 1000000000ULL;   /* rounded */
+    const ULONG64 KB = 1000ULL;
+    const ULONG64 MB = 1000ULL * KB;
+    const ULONG64 GB = 1000ULL * MB;
+
+    if (bytes < KB)
+    {
+        snprintf(o, s, "%llu B", (unsigned long long)bytes);
+        return;
+    }
+
+    if (bytes < MB)
+    {
+        /* 0 decimals is fine for KB in small UI */
+        snprintf(o, s, "%llu KB", (unsigned long long)(bytes / KB));
+        return;
+    }
+
+    if (bytes < GB)
+    {
+        snprintf(o, s, "%llu MB", (unsigned long long)(bytes / MB));
+        return;
+    }
+
+    snprintf(o, s, "%llu GB", (unsigned long long)(bytes / GB));
+}
+
+
+void usb_usage_to_string(char *out, size_t out_sz, ULONG64 used_bytes, ULONG64 total_bytes)
+{
+    char used_mb[15];
+    char total_g[15];
+
+    format_bytes_dec(used_mb, 15, used_bytes);
+    format_bytes_dec(total_g, 15, total_bytes);
 
     /* Example: "123 MB / 16 G" */
-    snprintf(out, out_sz, "%llu MB / %llu G",
-             (unsigned long long)used_mb,
-             (unsigned long long)total_g);
+    snprintf(out, out_sz, "%s / %s", used_mb, total_g);
 }
 
 /* Updates the USB message prompt text according to the current HMI state. */
@@ -101,9 +145,6 @@ void hmi_screen_update(void)
     GX_PROMPT               *p_message_box1  = &window1.window1_c02;
     GX_PROMPT               *p_message_box2  = &window1.window1_memory_size;
     GX_RADIAL_PROGRESS_BAR  *p_usb_donut     = &window1.window1_memory_radial_pbar;
-
-    /* Default: hide donut unless HTTP is running */
-    gx_widget_hide((GX_WIDGET *)p_usb_donut);
 
     static int last_state = -1;
     static UINT last_used_pct = 999;
@@ -151,14 +192,27 @@ void hmi_screen_update(void)
             }
 
             /* USB usage -> donut */
-            ULONG64 used_b = 0, total_b = 0;
+            ULONG64 used_b  = 0;
+            ULONG64 total_b = 0;
             char usb_str[32];
-            (void) usb_used_total_bytes_get(&used_b, &total_b);
-            usb_usage_to_string(usb_str, sizeof(usb_str), used_b, total_b);
-            UINT used_pct = (total_b ? (UINT)((used_b * 100ULL) / total_b) : 0);
 
-            /* Map 0..100% -> 0..-360 degrees (clockwise fill). :contentReference[oaicite:3]{index=3} */
-            GX_VALUE angle = (GX_VALUE)(-((INT)used_pct * -360) / 100);
+            usb_used_total_bytes_get(&used_b, &total_b);
+            usb_usage_to_string(usb_str, sizeof(usb_str), used_b, total_b);
+
+            UINT used_pct = 0u;
+            if (total_b != 0ULL)
+            {
+                /* rounded integer percent */
+                used_pct = (UINT)((used_b * 100ULL + (total_b / 2ULL)) / total_b);
+                if (used_pct > 100u) used_pct = 100u;
+            }
+            else
+            {
+                used_pct = 0u;
+                snprintf(usb_str, sizeof(usb_str), "0 B / 0 B");
+            }
+
+            GX_VALUE angle = (GX_VALUE)(-((INT)used_pct * 360) / 100);
 
             gx_widget_show((GX_WIDGET *)p_usb_donut);
             gx_radial_progress_bar_value_set(p_usb_donut, angle);
@@ -170,8 +224,7 @@ void hmi_screen_update(void)
             message1.gx_string_ptr    = g_http_msg;
             message1.gx_string_length = strlen(g_http_msg);
 
-            snprintf(g_usbu_msg, sizeof(g_usbu_msg),
-                     "%s", usb_str);
+            snprintf(g_usbu_msg, sizeof(g_usbu_msg), "%s", usb_str);
             message2.gx_string_ptr    = g_usbu_msg;
             message2.gx_string_length = strlen(g_usbu_msg);
         }
@@ -224,7 +277,6 @@ void hmi_screen_update(void)
         gx_prompt_text_set_ext(p_message_box2, &message2);
         gx_system_dirty_mark((GX_WIDGET *)p_message_box1);
         gx_system_dirty_mark((GX_WIDGET *)p_message_box2);
-        //gx_system_canvas_refresh();
     }
 }
 

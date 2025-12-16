@@ -8,10 +8,13 @@ let currentPath = "/";          // Always starts with leading "/", no trailing "
 const API_BASE = "/api";
 
 function fmtBytes(n) {
-    if (n < 1024) return `${n} B`;
-    if (n < 1024 * 1024) return `${Math.floor(n / 1024)} KB`;
-    if (n < 1024 * 1024 * 1024) return `${Math.floor(n / (1024 * 1024))} MB`;
-    return `${Math.floor(n / (1024 * 1024 * 1024))} GB`;
+    const b = Number(n);
+    const KB = 1000, MB = KB*1000, GB = MB*1000;
+
+    if(b >= GB) return `${(b / GB).toFixed(0)} GB`;
+    if(b >= MB) return `${(b / MB).toFixed(0)} MB`;
+    if(b >= KB) return `${(b / KB).toFixed(0)} KB`;
+    return `${b} B`;
 }
 
 async function refreshUsbUsage() {
