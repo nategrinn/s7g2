@@ -131,7 +131,7 @@ src/usb_thread_entry.o: ../src/usb_thread_entry.c \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/driver/instances/r_qspi.h \
  D:/Gitlab/s7g2/GUIApp/synergy_cfg/ssp_cfg/driver/r_qspi_cfg.h \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/driver/api/r_qspi_api.h \
- ../src/hmi_state.h
+ ../src/hmi_state.h D:/Gitlab/s7g2/GUIApp/src/www/web_assets.h
 D:/Gitlab/s7g2/GUIApp/src/synergy_gen/usb_thread.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/bsp/bsp_api.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/ssp_common_api.h:
@@ -265,3 +265,4 @@ D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/driver/instances/r_qspi.h:
 D:/Gitlab/s7g2/GUIApp/synergy_cfg/ssp_cfg/driver/r_qspi_cfg.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/driver/api/r_qspi_api.h:
 ../src/hmi_state.h:
+D:/Gitlab/s7g2/GUIApp/src/www/web_assets.h:

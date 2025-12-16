@@ -18,6 +18,8 @@
 #include "led_control/led.h"
 #include "auth_manager.h"
 
+#include <common_resource.h>
+
 #define MAX_PATH_LEN                (255u)
 #define MAX_NAME_CHARS              (14u)      /* your tuned value */
 #define HTTP_UPLOAD_BUFFER_SIZE     (8192u)    //(4096u)
@@ -368,6 +370,22 @@ static UINT http_send_static_file(NX_HTTP_SERVER * server_ptr, const CHAR * path
     return NX_HTTP_CALLBACK_COMPLETED;
 }
 
+/* Returns percent * 100 (two decimals), e.g. 2667 = 26.67% */
+static ULONG http_percent_x100_u64(ULONG64 used, ULONG64 total)
+{
+    if (total == 0ULL) return 0u;
+
+    /* Avoid overflow: split quotient + remainder */
+    ULONG64 q = used / total;
+    ULONG64 r = used % total;
+
+    ULONG64 pct_x100 = q * 10000ULL + (r * 10000ULL) / total;
+
+    if (pct_x100 > 10000ULL) pct_x100 = 10000ULL; /* clamp to 100.00% */
+    return (ULONG)pct_x100;
+}
+
+
 static UINT http_send_usb_stats(NX_HTTP_SERVER * server_ptr)
 {
     if ((g_usb_media == FX_NULL) || (g_usb_media->fx_media_id != FX_MEDIA_ID))
@@ -375,43 +393,45 @@ static UINT http_send_usb_stats(NX_HTTP_SERVER * server_ptr)
         return http_send_error(server_ptr, "USB not mounted\r\n");
     }
 
-    /* Free space in bytes (FileX API). */
-    ULONG free_bytes = 0u;
-    UINT fx = fx_media_space_available(g_usb_media, &free_bytes);
+    /* FileX gives free bytes as ULONG (32-bit) on many SSP versions */
+    ULONG free32 = 0u;
+    UINT fx = fx_media_space_available(g_usb_media, &free32);
     if (fx != FX_SUCCESS)
     {
         return http_send_error(server_ptr, "fx_media_space_available failed\r\n");
     }
 
-    /* Total space in bytes (computed from media geometry). */
-    unsigned long long total_bytes =
-        (unsigned long long) g_usb_media->fx_media_total_sectors *
-        (unsigned long long) g_usb_media->fx_media_bytes_per_sector;
+    ULONG64 total =
+        (ULONG64)g_usb_media->fx_media_total_sectors *
+        (ULONG64)g_usb_media->fx_media_bytes_per_sector;
 
-    unsigned long long free_b  = (unsigned long long) free_bytes;
-    unsigned long long used_b  = (total_bytes > free_b) ? (total_bytes - free_b) : 0ULL;
+    ULONG64 freeb = (ULONG64)free32;
+    if (freeb > total) freeb = total;
 
-    unsigned used_pct = 0u;
-    if (total_bytes > 0ULL)
-    {
-        used_pct = (unsigned) ((used_b * 100ULL) / total_bytes);
-        if (used_pct > 100u) used_pct = 100u;
-    }
+    ULONG64 used  = total - freeb;
 
-    /* JSON body */
-    CHAR body[192];
-    UINT body_len = (UINT) snprintf(body, sizeof(body),
-        "{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"used_pct\":%u}",
-        total_bytes, free_b, used_b, used_pct);
+    ULONG used_pct_x100 = http_percent_x100_u64(used, total);
+    ULONG used_pct_int  = used_pct_x100 / 100u; /* 0..100 */
 
-    CHAR header[192];
-    UINT header_len = (UINT) snprintf(header, sizeof(header),
+    CHAR body[220];
+    UINT body_len = (UINT)snprintf(body, sizeof(body),
+        "{\"total\":%llu,\"free\":%llu,\"used\":%llu,\"used_pct\":%lu,\"used_pct_x100\":%lu}",
+        (unsigned long long)total,
+        (unsigned long long)freeb,
+        (unsigned long long)used,
+        (unsigned long)used_pct_int,
+        (unsigned long)used_pct_x100);
+
+    CHAR header[200];
+    UINT header_len = (UINT)snprintf(header, sizeof(header),
         "HTTP/1.0 200 OK\r\n"
         "Content-Type: application/json\r\n"
         "Content-Length: %u\r\n"
         "Connection: close\r\n"
         "\r\n",
-        (unsigned) body_len);
+        (unsigned)body_len);
+
+    if (header_len >= sizeof(header)) header_len = (UINT)(sizeof(header) - 1u);
 
     http_send_data(server_ptr, header, header_len);
     http_send_data(server_ptr, body, body_len);
@@ -1306,6 +1326,7 @@ static UINT http_handle_logout(NX_HTTP_SERVER * server_ptr)
 
     http_send_data(server_ptr, header, header_len);
     http_send_data(server_ptr, json, (UINT) strlen(json));
+
     return NX_HTTP_CALLBACK_COMPLETED;
 }
 

@@ -58,6 +58,7 @@ src/gui \
 src/hardware \
 src/led_control \
 src/synergy_gen \
+src/www \
 synergy/board/s7g2_sk \
 synergy/ssp/src/bsp/cmsis/Device/RENESAS/S7G2/Source \
 synergy/ssp/src/bsp/mcu/all \

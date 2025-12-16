@@ -13,7 +13,8 @@ typedef enum
     HMI_WAIT_USB = 0,
     HMI_USB_MOUNTING,
     HMI_USB_READY,
-    HMI_HTTP_RUNNING
+    HMI_HTTP_RUNNING,
+    HMI_ERROR_ERASING_WEBAPP_FILES
 } hmi_state_t;
 
 /* Global HMI state (defined in main_thread_entry.c) */

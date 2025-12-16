@@ -1,5 +1,9 @@
 src/main_thread_entry.o: ../src/main_thread_entry.c \
- D:/Gitlab/s7g2/GUIApp/src/synergy_gen/main_thread.h \
+ D:/Gitlab/s7g2/GUIApp/src/common_resource.h \
+ D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/tx_port.h \
+ D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/cm4_gcc/tx_port.h \
+ D:/Gitlab/s7g2/GUIApp/synergy_cfg/ssp_cfg/framework/el/tx_user.h \
+ D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/tx_cmsis.h \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/bsp/bsp_api.h \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/ssp_common_api.h \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/ssp_version.h \
@@ -45,11 +49,9 @@ src/main_thread_entry.o: ../src/main_thread_entry.c \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/src/bsp/mcu/all/bsp_feature.h \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/src/bsp/mcu/all/bsp_mcu_api.h \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/src/bsp/mcu/all/bsp_error_checking.h \
+ D:/Gitlab/s7g2/GUIApp/src/synergy_gen/main_thread.h \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/tx_api.h \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/tx_port.h \
- D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/cm4_gcc/tx_port.h \
- D:/Gitlab/s7g2/GUIApp/synergy_cfg/ssp_cfg/framework/el/tx_user.h \
- D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/tx_cmsis.h \
  D:/Gitlab/s7g2/GUIApp/src/synergy_gen/hal_data.h \
  D:/Gitlab/s7g2/GUIApp/src/synergy_gen/common_data.h \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/driver/api/r_crypto_api.h \
@@ -68,7 +70,6 @@ src/main_thread_entry.o: ../src/main_thread_entry.c \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/api/sf_crypto_api.h \
  D:/Gitlab/s7g2/GUIApp/synergy_cfg/ssp_cfg/framework/sf_crypto_cfg.h \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/nxd/nx_api.h \
- D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/tx_port.h \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/nxd/nx_port.h \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/cm4_gcc/nxd/nx_port.h \
  D:/Gitlab/s7g2/GUIApp/synergy_cfg/ssp_cfg/framework/el/nx_user.h \
@@ -147,7 +148,11 @@ src/main_thread_entry.o: ../src/main_thread_entry.c \
  ../src/network_info.h ../src/hmi_state.h ../src/led_control/led.h \
  D:/Gitlab/s7g2/GUIApp/src/synergy_gen/common_data.h \
  ../src/hardware/lcd.h
-D:/Gitlab/s7g2/GUIApp/src/synergy_gen/main_thread.h:
+D:/Gitlab/s7g2/GUIApp/src/common_resource.h:
+D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/tx_port.h:
+D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/cm4_gcc/tx_port.h:
+D:/Gitlab/s7g2/GUIApp/synergy_cfg/ssp_cfg/framework/el/tx_user.h:
+D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/tx_cmsis.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/bsp/bsp_api.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/ssp_common_api.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/ssp_version.h:
@@ -193,11 +198,9 @@ D:/Gitlab/s7g2/GUIApp/synergy/ssp/src/bsp/mcu/all/bsp_delay.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/src/bsp/mcu/all/bsp_feature.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/src/bsp/mcu/all/bsp_mcu_api.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/src/bsp/mcu/all/bsp_error_checking.h:
+D:/Gitlab/s7g2/GUIApp/src/synergy_gen/main_thread.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/tx_api.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/tx_port.h:
-D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/cm4_gcc/tx_port.h:
-D:/Gitlab/s7g2/GUIApp/synergy_cfg/ssp_cfg/framework/el/tx_user.h:
-D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/tx_cmsis.h:
 D:/Gitlab/s7g2/GUIApp/src/synergy_gen/hal_data.h:
 D:/Gitlab/s7g2/GUIApp/src/synergy_gen/common_data.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/driver/api/r_crypto_api.h:
@@ -216,7 +219,6 @@ D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/instances/sf_crypto.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/api/sf_crypto_api.h:
 D:/Gitlab/s7g2/GUIApp/synergy_cfg/ssp_cfg/framework/sf_crypto_cfg.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/nxd/nx_api.h:
-D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/tx_port.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/nxd/nx_port.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/cm4_gcc/nxd/nx_port.h:
 D:/Gitlab/s7g2/GUIApp/synergy_cfg/ssp_cfg/framework/el/nx_user.h:

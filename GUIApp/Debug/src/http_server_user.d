@@ -146,7 +146,7 @@ src/http_server_user.o: ../src/http_server_user.c \
  D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/nxd/nx_ipv4.h \
  ../src/hmi_state.h ../src/led_control/led.h \
  D:/Gitlab/s7g2/GUIApp/src/synergy_gen/common_data.h \
- ../src/auth_manager.h
+ ../src/auth_manager.h D:/Gitlab/s7g2/GUIApp/src/common_resource.h
 D:/Gitlab/s7g2/GUIApp/src/synergy_gen/network_thread.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/bsp/bsp_api.h:
 D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/ssp_common_api.h:
@@ -296,3 +296,4 @@ D:/Gitlab/s7g2/GUIApp/synergy/ssp/inc/framework/el/nxd/nx_ipv4.h:
 ../src/led_control/led.h:
 D:/Gitlab/s7g2/GUIApp/src/synergy_gen/common_data.h:
 ../src/auth_manager.h:
+D:/Gitlab/s7g2/GUIApp/src/common_resource.h:

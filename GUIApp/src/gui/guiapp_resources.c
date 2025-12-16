@@ -6,7 +6,7 @@
 /*  Studio User Guide, or visit our web site at azure.com/rtos                 */
 /*                                                                             */
 /*  GUIX Studio Revision 6.4.0.0                                               */
-/*  Date (dd.mm.yyyy): 11.12.2025   Time (hh:mm): 16:45                        */
+/*  Date (dd.mm.yyyy): 16.12.2025   Time (hh:mm): 00:49                        */
 /*******************************************************************************/
 
 
@@ -47,7 +47,8 @@ GX_CONST GX_COLOR display_1_theme_1_color_table[] =
     0x0000ffff,
     0x00007bef,
     0x0000ffff,
-    0x00000000
+    0x00000000,
+    0x000008bc
 };
 
 
@@ -356,10 +357,12 @@ GX_CONST GX_UBYTE display_1_INSTRUCT_BUTTON_English[] = "Press to go to window2"
 GX_CONST GX_UBYTE display_1_STRING_1_English[] = "Plug USB please";
 GX_CONST GX_UBYTE display_1_STRING_2_English[] = "text_view";
 GX_CONST GX_UBYTE display_1_STRING_3_English[] = "SK-S7G2";
+GX_CONST GX_UBYTE display_1_STRING_4_English[] = "prompt";
+GX_CONST GX_UBYTE display_1_STRING_5_English[] = "510 MB / 1 GB";
 
 /* String Table for display_1 language English                                 */
 
-GX_CONST GX_STRING display_1_English_string_table[12] =
+GX_CONST GX_STRING display_1_English_string_table[14] =
 {
     {GX_NULL, 0},
     {(GX_CONST GX_CHAR *)display_1_HELLO_WORLD_English, sizeof(display_1_HELLO_WORLD_English) - 1},
@@ -372,7 +375,9 @@ GX_CONST GX_STRING display_1_English_string_table[12] =
     {(GX_CONST GX_CHAR *)display_1_INSTRUCT_BUTTON_English, sizeof(display_1_INSTRUCT_BUTTON_English) - 1},
     {(GX_CONST GX_CHAR *)display_1_STRING_1_English, sizeof(display_1_STRING_1_English) - 1},
     {(GX_CONST GX_CHAR *)display_1_STRING_2_English, sizeof(display_1_STRING_2_English) - 1},
-    {(GX_CONST GX_CHAR *)display_1_STRING_3_English, sizeof(display_1_STRING_3_English) - 1}
+    {(GX_CONST GX_CHAR *)display_1_STRING_3_English, sizeof(display_1_STRING_3_English) - 1},
+    {(GX_CONST GX_CHAR *)display_1_STRING_4_English, sizeof(display_1_STRING_4_English) - 1},
+    {(GX_CONST GX_CHAR *)display_1_STRING_5_English, sizeof(display_1_STRING_5_English) - 1}
 };
 
 /*  Language Table                                                             */
@@ -419,7 +424,7 @@ GX_THEME display_1_theme_1 =
     },
     GX_SCROLLBAR_RELATIVE_THUMB|GX_SCROLLBAR_END_BUTTONS|GX_SCROLLBAR_VERTICAL,
     GX_SCROLLBAR_RELATIVE_THUMB|GX_SCROLLBAR_END_BUTTONS|GX_SCROLLBAR_HORIZONTAL,
-    31,                                      /* color table size               */
+    32,                                      /* color table size               */
     4,                                       /* font table size                */
     5,                                       /* pixelmap table size            */
     0                                        /* palette size                   */

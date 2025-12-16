@@ -6,7 +6,7 @@
 /*  GUIX Studio User Guide, or visit our web site at azure.com/rtos            */
 /*                                                                             */
 /*  GUIX Studio Revision 6.4.0.0                                               */
-/*  Date (dd.mm.yyyy): 11.12.2025   Time (hh:mm): 16:45                        */
+/*  Date (dd.mm.yyyy): 16.12.2025   Time (hh:mm): 00:49                        */
 /*******************************************************************************/
 
 
@@ -28,7 +28,8 @@ extern   "C" {
 #define ID_WINDOW1 4
 #define ID_A00 5
 #define ID_C02 6
-#define ID_B01 7
+#define ID_MEMORY_RADIAL_PBAR 7
+#define ID_MEMORY_SIZE 8
 
 
 /* Define animation ids                                                        */
@@ -87,17 +88,6 @@ typedef struct
     GX_RESOURCE_ID wallpaper_id;
 } GX_WINDOW_PROPERTIES;
 
-typedef struct
-{
-    GX_RESOURCE_ID string_id;
-    GX_RESOURCE_ID font_id;
-    GX_RESOURCE_ID normal_text_color_id;
-    GX_RESOURCE_ID selected_text_color_id;
-    GX_RESOURCE_ID disabled_text_color_id;
-    GX_UBYTE       whitespace;
-    GX_BYTE        line_space;
-} GX_ML_TEXT_VIEW_PROPERTIES;
-
 
 /* Declare top-level control blocks                                            */
 
@@ -113,7 +103,8 @@ typedef struct WINDOW1_CONTROL_BLOCK_STRUCT
     GX_WINDOW_MEMBERS_DECLARE
     GX_PROMPT window1_a00;
     GX_PROMPT window1_c02;
-    GX_MULTI_LINE_TEXT_VIEW window1_b01;
+    GX_RADIAL_PROGRESS_BAR window1_memory_radial_pbar;
+    GX_PROMPT window1_memory_size;
 } WINDOW1_CONTROL_BLOCK;
 
 
@@ -214,9 +205,9 @@ typedef struct GX_STUDIO_DISPLAY_INFO_STRUCT
 
 /* Declare Studio-generated functions for creating top-level widgets           */
 
+UINT gx_studio_radial_progress_bar_create(GX_CONST GX_STUDIO_WIDGET *info, GX_WIDGET *control_block, GX_WIDGET *parent);
 UINT gx_studio_prompt_create(GX_CONST GX_STUDIO_WIDGET *info, GX_WIDGET *control_block, GX_WIDGET *parent);
 UINT gx_studio_window_create(GX_CONST GX_STUDIO_WIDGET *info, GX_WIDGET *control_block, GX_WIDGET *parent);
-UINT gx_studio_multi_line_text_view_create(GX_CONST GX_STUDIO_WIDGET *info, GX_WIDGET *control_block, GX_WIDGET *parent);
 GX_WIDGET *gx_studio_widget_create(GX_BYTE *storage, GX_CONST GX_STUDIO_WIDGET *definition, GX_WIDGET *parent);
 UINT gx_studio_named_widget_create(char *name, GX_WIDGET *parent, GX_WIDGET **new_widget);
 UINT gx_studio_display_configure(USHORT display, UINT (*driver)(GX_DISPLAY *), GX_UBYTE language, USHORT theme, GX_WINDOW_ROOT **return_root);
